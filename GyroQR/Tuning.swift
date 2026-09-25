@@ -7,6 +7,21 @@ import SwiftUI
 /// travelling ±17pt × ±21pt against its card, ±2° of in-plane roll.
 @MainActor
 final class Tuning: ObservableObject {
+
+    /// `-cardStyle Profile` opens on the second card, for captures.
+    init() {
+        let a = ProcessInfo.processInfo.arguments
+        if let i = a.firstIndex(of: "-cardStyle"), i + 1 < a.count,
+           let s = CardStyle.allCases.first(where: {
+               $0.rawValue.lowercased() == a[i + 1].lowercased() }) {
+            cardStyle = s
+        }
+    }
+
+    /// Which card the QR scene shows. The motion is identical either way —
+    /// see `CardSpec`.
+    @Published var cardStyle: CardStyle = .invite
+
     // 3D tilt
     @Published var tiltEnabled = true
     @Published var tiltDegrees: Double = 19
@@ -48,12 +63,23 @@ final class Tuning: ObservableObject {
     @Published var cardScale: Double = 1.0
     @Published var backdrop: Backdrop = .design
     @Published var showBounds = false
-    @Published var invertX = false
-    @Published var invertY = false
+    // On by default per the onboarding brief - flip either in Controls > Input
+    // if the card should lean with the device rather than against it.
+    @Published var invertX = true
+    @Published var invertY = true
 
     enum Backdrop: String, CaseIterable, Identifiable {
         case design = "Design", dark = "Dark", light = "Light"
         var id: String { rawValue }
+    }
+
+    enum CardStyle: String, CaseIterable, Identifiable {
+        /// Figma 779:22071 — the invite card on its photographic backdrop.
+        case invite = "Invite"
+        /// Figma 940:62757 — the profile QR on a starburst.
+        case profile = "Profile"
+        var id: String { rawValue }
+        var spec: CardSpec { self == .invite ? .invite : .profile }
     }
 
     func reset() {
@@ -66,6 +92,6 @@ final class Tuning: ObservableObject {
         blurScale = 0.45; gyroBlur = true
         wobbleEnabled = true; wobble = 5
         cardScale = 1.0;      showBounds = false
-        invertX = false;      invertY = false
+        invertX = true;       invertY = true
     }
 }

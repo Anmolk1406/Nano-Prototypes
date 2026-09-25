@@ -11,8 +11,10 @@ import SwiftUI
 struct GyroCardView: View {
     @ObservedObject var out: MotionOutput
     @ObservedObject var t: Tuning
-    /// Optional native panel that rides on the card at its own elevation.
-    var caption: (line1: String, line2: String)? = nil
+    /// Which card design to draw. Every bit of the motion below is shared: the
+    /// two cards differ only in their planes.
+    var spec: CardSpec = .invite
+    var onClose: () -> Void = {}
 
     private var tilt: CGPoint {
         CGPoint(x: out.tilt.x * (t.invertX ? -1 : 1),
@@ -25,11 +27,11 @@ struct GyroCardView: View {
     // slides into view on extreme tilts.
     private static let sheenTravel: CGFloat = 260
     private static let holoTravel:  CGFloat = 300
-    private static let lightSpan: CGFloat = {
-        let diag = (CardSpec.size.width * CardSpec.size.width
-                  + CardSpec.size.height * CardSpec.size.height).squareRoot()
-        return diag + 2 * max(sheenTravel, holoTravel) + 80
-    }()
+    private var lightSpan: CGFloat {
+        let diag = (spec.size.width * spec.size.width
+                  + spec.size.height * spec.size.height).squareRoot()
+        return diag + 2 * max(Self.sheenTravel, Self.holoTravel) + 80
+    }
 
     /// Rotation actually applied to the card, in degrees.
     private var yaw:   Double { t.tiltEnabled ? tilt.x * t.tiltDegrees : 0 }
@@ -38,7 +40,7 @@ struct GyroCardView: View {
     private var tiltMagnitude: Double { min(1, sqrt(tilt.x * tilt.x + tilt.y * tilt.y)) }
 
     private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: CardSpec.corner, style: .continuous)
+        RoundedRectangle(cornerRadius: spec.corner, style: .continuous)
     }
 
     var body: some View {
@@ -46,28 +48,40 @@ struct GyroCardView: View {
             // The card body. Everything in here is clipped to the card, which
             // is what keeps the fuzzy ball bleeding off the left edge as drawn.
             ZStack(alignment: .topLeading) {
-                Color(red: 0.898, green: 0.027, blue: 0.988)   // Figma #E507FC
-                ForEach(CardSpec.layers.filter { !$0.floats }) { layer($0) }
+                spec.base
+                ForEach(spec.layers.filter { !$0.floats }) { layer($0) }
+                ForEach(spec.texts.filter { !$0.panel }) { textPlane($0) }
             }
-            .frame(width: CardSpec.size.width, height: CardSpec.size.height)
+            .frame(width: spec.size.width, height: spec.size.height)
             // These overlays are deliberately larger than the card, so they must
             // sit in an overlay rather than in the ZStack — otherwise their size
             // would drive the stack's layout and shift every layer off the card.
             .overlay { if t.sheenEnabled { sheen } }
             .overlay { if t.holoEnabled  { holo } }
             .clipShape(shape)
+            // Clipped to the card's *coverage* as well as to its box, for a
+            // card whose artwork does not fill the box. The mask goes here
+            // rather than around the light bands on their own, because those
+            // bands blend against what is under them — wrapping them in a
+            // mask would give them their own compositing group and the blend
+            // would stop reaching the card, the same trap the pocket glow hit.
+            .modifier(CoverageMask(image: spec.lightMask, size: spec.size))
             .overlay { border }
 
             // Floating planes, drawn outside the clip so they may overhang.
-            ForEach(CardSpec.layers.filter { $0.floats }) { layer($0) }
+            ForEach(spec.layers.filter { $0.floats }) { layer($0) }
+            // The invite card's caption panel is white and overhangs nothing,
+            // but it is drawn outside the clip for the same reason its layer is:
+            // it is a sibling of the card in the design.
+            ForEach(spec.texts.filter { $0.panel }) { textPlane($0) }
 
-            if let caption { captionPanel(caption) }
+            if let disc = spec.closeDisc { closeButton(disc) }
 
             if t.showBounds { bounds }
         }
-        .frame(width: CardSpec.size.width, height: CardSpec.size.height)
+        .frame(width: spec.size.width, height: spec.size.height)
         .compositingGroup()
-        .shadow(color: .black.opacity(0.22),
+        .shadow(color: .black.opacity(spec.shadowStrength),
                 radius: 18 + 6 * tiltMagnitude,
                 x: t.shadowEnabled ? -tilt.x * t.shadowShift : 0,
                 y: 6 + (t.shadowEnabled ? -tilt.y * t.shadowShift : 0))
@@ -77,6 +91,25 @@ struct GyroCardView: View {
         .rotation3DEffect(.degrees(pitch), axis: (x: 1, y: 0, z: 0), perspective: t.perspective)
         .rotation3DEffect(.degrees(yaw),   axis: (x: 0, y: 1, z: 0), perspective: t.perspective)
         .scaleEffect(t.cardScale)
+    }
+
+    /// Clips a view to an image's alpha, when there is one to clip to.
+    private struct CoverageMask: ViewModifier {
+        let image: String?
+        let size: CGSize
+
+        func body(content: Content) -> some View {
+            if let image {
+                content.mask {
+                    Image(image)
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: size.width, height: size.height)
+                }
+            } else {
+                content
+            }
+        }
     }
 
     // MARK: layers
@@ -117,26 +150,57 @@ struct GyroCardView: View {
             .offset(x: l.frame.minX + p.width, y: l.frame.minY + p.height)
     }
 
-    /// Figma 779:22701 — kept native rather than rasterised so the text stays
-    /// crisp, but parallaxed and shadowed like any other floating plane.
-    private func captionPanel(_ c: (line1: String, line2: String)) -> some View {
-        let f = CardSpec.captionFrame
-        let p = parallax(CardSpec.captionElevation)
+    /// Text kept native rather than rasterised so it stays crisp, but
+    /// parallaxed and shadowed like any other plane.
+    private func textPlane(_ tp: CardSpec.TextPlane) -> some View {
+        let p = parallax(tp.elevation)
+        let wob = t.wobbleEnabled ? tilt.x * t.wobble * tp.wobble : 0
         return VStack(spacing: 0) {
-            Text(c.line1)
-            Text(c.line2)
+            ForEach(Array(tp.lines.enumerated()), id: \.offset) { _, line in
+                Text(line)
+            }
         }
-        .figmaText(ScreenSpec.TypeScale.b16)
-        .foregroundStyle(ScreenSpec.Palette.textSecondary)
+        .font(tp.font)
+        .tracking(tp.tracking)
+        .lineSpacing(tp.lineSpacing)
+        .foregroundStyle(tp.style ?? AnyShapeStyle(tp.color))
         .multilineTextAlignment(.center)
-        .frame(width: f.width, height: f.height)
-        .background(.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(ScreenSpec.Palette.borderHairline, lineWidth: 1)
+        .frame(width: tp.frame.width, height: tp.frame.height)
+        .background {
+            if tp.panel {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(.white)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(ScreenSpec.Palette.borderHairline, lineWidth: 1)
+                    }
+            }
         }
-        .offset(x: f.minX + p.width, y: f.minY + p.height)
+        .rotationEffect(.degrees(wob))
+        .shadow(color: .black.opacity(tp.shadowOpacity * t.contactShadow),
+                radius: tp.shadowRadius,
+                x: -p.width * 0.75, y: -p.height * 0.75)
+        .offset(x: tp.frame.minX + p.width, y: tp.frame.minY + p.height)
+    }
+
+    /// The profile card's close button. Its own plane, low down — it is a
+    /// control sitting just off the surface, not a hero element.
+    private func closeButton(_ d: CardSpec.Disc) -> some View {
+        let p = parallax(d.elevation)
+        return Button(action: onClose) {
+            ZStack {
+                Circle().fill(.white)
+                Image(systemName: d.glyph)
+                    .font(.system(size: d.glyphSize, weight: .semibold))
+                    .foregroundStyle(OnboardingSpec.C.primary)
+            }
+            .frame(width: d.frame.width, height: d.frame.height)
+        }
+        .buttonStyle(.plain)
+        .shadow(color: .black.opacity(d.shadowOpacity * t.contactShadow),
+                radius: d.shadowRadius,
+                x: -p.width * 0.75, y: 2 - p.height * 0.75)
+        .offset(x: d.frame.minX + p.width, y: d.frame.minY + p.height)
     }
 
     // MARK: light
@@ -150,7 +214,7 @@ struct GyroCardView: View {
             .init(color: .white.opacity(0.22), location: 0.519),
             .init(color: .white.opacity(0),    location: 0.593),
         ], startPoint: .topLeading, endPoint: .bottomTrailing)
-        .frame(width: Self.lightSpan, height: Self.lightSpan)
+        .frame(width: lightSpan, height: lightSpan)
         .offset(x: -tilt.x * Self.sheenTravel, y: -tilt.y * Self.sheenTravel)
         .blendMode(.plusLighter)
         .opacity(t.sheen * (0.25 + 0.75 * tiltMagnitude))
@@ -172,7 +236,7 @@ struct GyroCardView: View {
             .init(color: .clear, location: 0.613),
             .init(color: .clear, location: 1.00),
         ], startPoint: .topLeading, endPoint: .bottomTrailing)
-        .frame(width: Self.lightSpan, height: Self.lightSpan)
+        .frame(width: lightSpan, height: lightSpan)
         .offset(x: tilt.x * Self.holoTravel, y: tilt.y * Self.holoTravel)
         .blendMode(.plusLighter)
         .opacity(t.holo * tiltMagnitude)
@@ -182,14 +246,14 @@ struct GyroCardView: View {
     /// The 4pt Figma border, with a moving highlight along the lit edge.
     private var border: some View {
         ZStack {
-            shape.strokeBorder(.white, lineWidth: CardSpec.border)
+            shape.strokeBorder(.white, lineWidth: spec.border)
             if t.rimEnabled {
                 shape
                     .strokeBorder(
                         LinearGradient(colors: [.white, .white.opacity(0.05), .white.opacity(0.55)],
                                        startPoint: UnitPoint(x: 0.5 - tilt.x * 0.5, y: 0.5 - tilt.y * 0.5),
                                        endPoint:   UnitPoint(x: 0.5 + tilt.x * 0.5, y: 0.5 + tilt.y * 0.5)),
-                        lineWidth: CardSpec.border)
+                        lineWidth: spec.border)
                     .blendMode(.plusLighter)
                     .opacity(0.9)
             }
@@ -200,7 +264,7 @@ struct GyroCardView: View {
     // MARK: debug
 
     private var bounds: some View {
-        ForEach(CardSpec.layers) { l in
+        ForEach(spec.layers) { l in
             let p = parallax(l.elevation)
             Rectangle()
                 .strokeBorder(l.debugTint, lineWidth: 1)

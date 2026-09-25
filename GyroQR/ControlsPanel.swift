@@ -5,8 +5,13 @@ struct ControlsPanel: View {
     @ObservedObject var t: Tuning
     @ObservedObject var haptics = Haptics.shared
     @ObservedObject var skin: SkinTuning
+    @ObservedObject var onb: OnboardingTuning
+    @ObservedObject var topUp: TopUpTuning
     @Binding var scene: AppScene
+    @Binding var step: OnboardingStep
     @Binding var expanded: Bool
+    /// The account page's one control: play its entrance again.
+    @Binding var accountReplay: Int
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,12 +21,28 @@ struct ControlsPanel: View {
                     VStack(alignment: .leading, spacing: 14) {
                         sceneSection
                         Divider().overlay(.white.opacity(0.12))
-                        if scene == .skinSelect {
+                        if scene == .onboarding {
+                            stepSection
+                            Divider().overlay(.white.opacity(0.12))
+                            avatarSection
+                            Divider().overlay(.white.opacity(0.12))
+                        }
+                        if scene == .skinSelect || scene == .onboarding {
                             motionSection
                             Divider().overlay(.white.opacity(0.12))
                             gestureSection
                             Divider().overlay(.white.opacity(0.12))
                             arcSection
+                            Divider().overlay(.white.opacity(0.12))
+                            hapticsSection
+                        }
+                        if scene == .topUp {
+                            topUpSection
+                            Divider().overlay(.white.opacity(0.12))
+                            hapticsSection
+                        }
+                        if scene == .account {
+                            accountSection
                             Divider().overlay(.white.opacity(0.12))
                             hapticsSection
                         }
@@ -73,10 +94,73 @@ struct ControlsPanel: View {
                 ForEach(AppScene.allCases) { s in Text(s.rawValue).tag(s) }
             }
             .pickerStyle(.segmented)
-            if scene == .skinSelect {
+            if scene == .skinSelect || scene == .onboarding {
                 Text("Swipe the card up to cycle skins, drag it down to confirm.")
                     .font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
             }
+            if scene == .topUp {
+                Text("Tap Request top up on the wallet, enter an amount, and "
+                     + "send it. Replay runs the whole round trip hands-free.")
+                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
+            }
+            if scene == .account {
+                Text("Only the header animates. Replay plays its load-in again.")
+                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
+            }
+        }
+    }
+
+    /// Jump straight to any step. Reviewing step 6 shouldn't mean typing an
+    /// OTP four times first.
+    private var stepSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header("Onboarding step")
+            Picker("", selection: $step) {
+                ForEach(OnboardingStep.allCases) { s in Text(s.rawValue).tag(s) }
+            }
+            .pickerStyle(.segmented)
+            Toggle("Reject the OTP", isOn: $onb.otpAlwaysFails).font(rowFont)
+            Text("Any 4 digits pass. Flip that to reach the rejection state \u{2014} "
+                 + "its toast and error haptic have no other way in.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+
+            header("Interest icons").padding(.top, 4)
+            Picker("", selection: $onb.categoryArt) {
+                ForEach(OnboardingTuning.CategoryArt.allCases) { s in Text(s.rawValue).tag(s) }
+            }
+            .pickerStyle(.segmented)
+            Text("The sheet draws all ten categories twice and does not say "
+                 + "which set is the real one, so both are here.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+        }
+    }
+
+    /// Cycling the avatar is a dissolve between two circles, so the treatment
+    /// lives in what happens to the pair mid-swap.
+    private var avatarSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header("Avatar cycle")
+            Picker("", selection: $onb.avatarStyle) {
+                ForEach(OnboardingTuning.AvatarStyle.allCases) { s in Text(s.rawValue).tag(s) }
+            }
+            .pickerStyle(.segmented)
+            slider("Blur", $onb.avatarBlur, 0...40, unit: "pt", format: "%.0f",
+                   enabled: onb.avatarStyle == .crossBlur || onb.avatarStyle == .zoom)
+            slider("Response", $onb.avatarResponse, 0.15...0.8, unit: "s", format: "%.2f")
+            Toggle("Blur follows the drag", isOn: $onb.dragBlur).font(rowFont)
+            slider("Drag blur", $onb.dragBlurAmount, 0.02...0.3, format: "%.2f",
+                   enabled: onb.dragBlur)
+            Text("Cross blurs both sides on one curve; Zoom adds a scale punch; "
+                 + "Glass sweeps a frosted scrim over the swap.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+
+            header("Avatar row").padding(.top, 8)
+            slider("Edge blur", $onb.rowBlur, 0...24, unit: "pt", format: "%.0f")
+            slider("Edge fade", $onb.rowFade, 0...0.9, format: "%.2f")
+            slider("Edge shrink", $onb.rowShrink, 0...0.5, format: "%.2f")
+            Text("Applied by position, not by a transition: an item at the row's "
+                 + "edge carries all three and loses them as it scrolls in.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
         }
     }
 
@@ -84,9 +168,11 @@ struct ControlsPanel: View {
         VStack(alignment: .leading, spacing: 8) {
             header("Entry & hints")
             Toggle("Deal-in on appear", isOn: $skin.entryEnabled).font(rowFont)
+            slider("Delay", $skin.entryDelay, 0...1.5, unit: "s", format: "%.2f",
+                   enabled: skin.entryEnabled)
             slider("Response", $skin.entryResponse, 0.2...0.7, unit: "s", format: "%.2f",
                    enabled: skin.entryEnabled)
-            slider("Stagger", $skin.entryStagger, 0...0.12, unit: "s", format: "%.3f",
+            slider("Stagger", $skin.entryStagger, 0...0.20, unit: "s", format: "%.3f",
                    enabled: skin.entryEnabled)
             Toggle("Idle gesture hints", isOn: $skin.hintsEnabled).font(rowFont)
             slider("Cycle hint", $skin.hintCycleAmount, 0...0.4, enabled: skin.hintsEnabled)
@@ -101,14 +187,52 @@ struct ControlsPanel: View {
     private var gestureSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             header("Gesture")
-            slider("Drag travel", $skin.dragTravel, 0.5...2.0, format: "%.2f")
+            header("Cycle gesture").padding(.top, 8)
+            Picker("", selection: $skin.cycleAxis) {
+                ForEach(SkinTuning.CycleAxis.allCases) { a in Text(a.rawValue).tag(a) }
+            }
+            .pickerStyle(.segmented)
+            Text("Sideways throws the card off either edge with a rise and a "
+                 + "tilt; the confirm pull stays downward in both.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            slider("Throw travel", $skin.throwTravel, 0.4...2.0, format: "%.2f")
+            slider("Pull travel", $skin.pullTravel, 0.4...2.0, format: "%.2f")
             Text(String(format: "Throw %.0fpt \u{00B7} pull %.0fpt \u{00B7} commits at %.0f%%",
-                        SkinSelectSpec.cycleThreshold * skin.dragTravel,
-                        SkinSelectSpec.confirmThreshold * skin.dragTravel,
+                        SkinSelectSpec.cycleThreshold * skin.throwTravel,
+                        SkinSelectSpec.confirmThreshold * skin.pullTravel,
                         SkinSelectSpec.commitFraction * 100))
                 .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
             slider("Throw detents", $skin.cycleDetents, 0...12, format: "%.0f",
                    enabled: haptics.isEnabled)
+
+            header("Cycle transition").padding(.top, 4)
+            slider("Duration", $skin.cycleDuration, 0.2...3.0, unit: "s", format: "%.2f")
+            slider("Drag preview", $skin.cyclePreview, 0...0.5, format: "%.2f")
+            Text("Fixed duration, so a flick and a slow drag look the same. "
+                 + "Preview is how much of it the drag scrubs before release \u{2014} "
+                 + "at 0 nothing but the card moves until you let go.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+
+            header("Pocket glow").padding(.top, 4)
+            Toggle("Lit mouth on the pull", isOn: $skin.glowEnabled).font(rowFont)
+            slider("Cycle", $skin.glowPeriod, 0.8...6, unit: "s", format: "%.1f",
+                   enabled: skin.glowEnabled)
+            slider("Thickness", $skin.glowThickness, 0.3...2.2, format: "%.2f",
+                   enabled: skin.glowEnabled)
+            Text("Colours are read off the card being confirmed; a card with no "
+                 + "hue of its own glows in tints of the one it has. Lit only "
+                 + "while the card is touching the mouth, at full strength.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+
+            header("Mouth").padding(.top, 8)
+            Toggle("Pinch the card into the edge", isOn: $skin.bendEnabled).font(rowFont)
+            slider("Amount", $skin.bendAmount, 0...16, unit: "pt", format: "%.0f",
+                   enabled: skin.bendEnabled)
+            slider("Reach", $skin.bendReach, 8...80, unit: "pt", format: "%.0f",
+                   enabled: skin.bendEnabled)
+            Text("A Metal distortion, so it needs the Metal toolchain to build. "
+                 + "Off leaves the card cut by a straight line at the mouth.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
         }
     }
 
@@ -221,7 +345,17 @@ struct ControlsPanel: View {
 
     private var stageSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            header("Stage")
+            header("Card")
+            Picker("", selection: $t.cardStyle) {
+                ForEach(Tuning.CardStyle.allCases) { c in Text(c.rawValue).tag(c) }
+            }
+            .pickerStyle(.segmented)
+            Text("Invite is Figma 779:22071 \u{2014} the card on a photo backdrop. "
+                 + "Profile is 940:62757 \u{2014} the profile QR on a starburst. "
+                 + "Same motion, same knobs; only the planes differ.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+
+            header("Stage").padding(.top, 4)
             slider("Card scale", $t.cardScale, 0.7...1.15, format: "%.2f")
             Picker("", selection: $t.backdrop) {
                 ForEach(Tuning.Backdrop.allCases) { b in Text(b.rawValue).tag(b) }
@@ -229,6 +363,121 @@ struct ControlsPanel: View {
             .pickerStyle(.segmented)
             Toggle("Show layer bounds", isOn: $t.showBounds).font(rowFont)
             Button("Reset all") { t.reset() }
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .buttonStyle(.bordered)
+                .tint(.white.opacity(0.9))
+        }
+    }
+
+    // MARK: top up
+
+    /// The animation's colours are read off the wallet's card skin, so picking
+    /// that card is the one control it cannot do without. A plain strip of the
+    /// 22 renders in the picker's own browse order, and under it the two or
+    /// three colours `SkinPalette` actually pulled out of the chosen one — the
+    /// bloom is heavily blurred and additive, so seeing the inputs is the only
+    /// way to tell a dull card from a badly sampled one.
+    private var accountSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header("Header load-in")
+            Text("The avatar pops from 62% on a spring with the friction "
+                 + "dropped to 18 — a damping ratio of 0.5, so it overshoots. "
+                 + "The stickers follow from 30%, and the three props travel "
+                 + "in from their nearest edge on the page's own 320/28.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            Button("Replay") { accountReplay += 1 }
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .buttonStyle(.bordered)
+                .tint(.white.opacity(0.9))
+        }
+    }
+
+    private var topUpSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header("Wallet card skin")
+            Text("Drives three things at once: the card on the wallet page, "
+                 + "the page's background, and the colours the bloom is built "
+                 + "from. 17 is the design's own; 12 gives the strongest bloom.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(0..<SkinSelectSpec.skinCount, id: \.self) { slot in
+                        let asset = SkinSelectSpec.asset(at: slot)
+                        Button { topUp.skin = asset } label: {
+                            Image(String(format: "skin_%02d", asset))
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 58)
+                                .clipShape(RoundedRectangle(cornerRadius: 6,
+                                                            style: .continuous))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .strokeBorder(.white,
+                                                      lineWidth: topUp.skin == asset ? 2 : 0)
+                                }
+                                .opacity(topUp.skin == asset ? 1 : 0.55)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, 3)
+            }
+            .scrollIndicators(.hidden)
+            .frame(height: 52)
+
+            HStack(spacing: 6) {
+                Text(String(format: "skin_%02d", topUp.skin))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.55))
+                ForEach(Array(topUp.bloomColors.enumerated()), id: \.offset) { _, c in
+                    Capsule().fill(c).frame(width: 26, height: 10)
+                }
+                Spacer(minLength: 0)
+                Button("Replay") { topUp.replay += 1 }
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .buttonStyle(.bordered)
+                    .tint(.white.opacity(0.9))
+            }
+
+            header("Sequence").padding(.top, 4)
+            slider("Page retreat", $topUp.fade, 0.15...1.0, unit: "s", format: "%.2f")
+            slider("Bloom rise", $topUp.rise, 0.2...1.6, unit: "s", format: "%.2f")
+            slider("Dwell", $topUp.dwell, 0.4...5, unit: "s", format: "%.2f")
+            slider("Sweep out", $topUp.sweep, 0.25...1.6, unit: "s", format: "%.2f")
+            Text("Rise and sweep are the same driver on two curves \u{2014} growth "
+                 + "front-loaded so the bloom is already huge when it leaves, "
+                 + "lift and fade held back so it is still bright at the top.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+
+            header("Sweep").padding(.top, 4)
+            slider("Grow to", $topUp.sweepScale, 1.2...4.5, unit: "\u{00D7}", format: "%.2f")
+            slider("Clearance", $topUp.sweepClear, 0.4...1.6, unit: "\u{00D7}", format: "%.2f")
+            slider("Count up", $topUp.count, 0.2...2, unit: "s", format: "%.2f")
+            slider("Count blur", $topUp.countBlur, 0...40, unit: "pt", format: "%.0f")
+            slider("Hold landed", $topUp.settle, 0.1...2, unit: "s", format: "%.2f")
+            Text("The hold runs from whichever finishes last, the sweep or the "
+                 + "count \u{2014} so the wallet never arrives on a number that "
+                 + "is still climbing.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            Text("Clearance 1.0 is exactly the lift that puts the last visible "
+                 + "part of the bloom above the top edge, worked out from the "
+                 + "cluster's own size, scale and blur. Below 1 it fades out "
+                 + "on screen instead of leaving.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+
+            header("Bloom").padding(.top, 4)
+            slider("Blur", $topUp.bloomBlur, 16...110, unit: "pt", format: "%.0f")
+            slider("Height", $topUp.bloomHeight, 240...680, unit: "pt", format: "%.0f")
+            slider("Drift", $topUp.drift, 0...3, format: "%.2f")
+
+            header("Page").padding(.top, 4)
+            slider("Blur", $topUp.pageBlur, 0...44, unit: "pt", format: "%.0f")
+            slider("Veil", $topUp.veil, 0.7...1, format: "%.3f")
+            Text("The veil stops short of black on purpose: the page is light, "
+                 + "and its white keys and chips showing through are what the "
+                 + "bloom rises out of.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            Button("Reset motion") { topUp.reset() }
                 .font(.system(size: 12, weight: .medium, design: .rounded))
                 .buttonStyle(.bordered)
                 .tint(.white.opacity(0.9))

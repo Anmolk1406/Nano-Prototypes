@@ -26,6 +26,7 @@ final class Haptics: ObservableObject {
     private let medium = UIImpactFeedbackGenerator(style: .medium)
     private let heavy  = UIImpactFeedbackGenerator(style: .heavy)
     private let rigid  = UIImpactFeedbackGenerator(style: .rigid)
+    private let notify = UINotificationFeedbackGenerator()
 
     private var timer: Timer?
     private var progress: Double = 0
@@ -35,7 +36,7 @@ final class Haptics: ObservableObject {
 
     func prepare() {
         guard isEnabled else { return }
-        light.prepare(); medium.prepare(); heavy.prepare(); rigid.prepare()
+        light.prepare(); medium.prepare(); heavy.prepare(); rigid.prepare(); notify.prepare()
     }
 
     // MARK: discrete
@@ -67,6 +68,75 @@ final class Haptics: ObservableObject {
     func selectionTick() {
         guard isEnabled else { return }
         light.impactOccurred(intensity: 0.35)
+    }
+
+    /// The gesture has passed its commit threshold — let go and it happens.
+    ///
+    /// Distinct from `detent` on purpose. The detents are a texture you feel
+    /// *through*, all light impacts of rising intensity; this is a single firm
+    /// one, so "you can release now" is not just a slightly stronger version of
+    /// the last thing you felt.
+    func armed() {
+        guard isEnabled else { return }
+        rigid.impactOccurred(intensity: 1.0)
+    }
+
+    /// The gesture was released short of its threshold and the card fell back.
+    /// Soft, because nothing happened — it only needs to close the loop.
+    func aborted() {
+        guard isEnabled else { return }
+        light.impactOccurred(intensity: 0.28)
+    }
+
+    // MARK: onboarding
+
+    /// A CTA was pressed.
+    func tap() {
+        guard isEnabled else { return }
+        medium.impactOccurred(intensity: 0.75)
+    }
+
+    /// A control was pressed down, and let go of.
+    ///
+    /// Two events rather than one, because a press with a lift has two moments
+    /// worth feeling: the control taking the touch, and the control settling
+    /// back. The release is deliberately softer — equal weights read as a
+    /// double-tap rather than as one press.
+    func pressDown() {
+        guard isEnabled else { return }
+        medium.impactOccurred(intensity: 0.8)
+    }
+
+    func pressUp() {
+        guard isEnabled else { return }
+        light.impactOccurred(intensity: 0.42)
+    }
+
+    /// One OTP digit landed. Light and crisp — this fires four times in a row,
+    /// so anything heavier turns the entry into a rumble.
+    func keyTick() {
+        guard isEnabled else { return }
+        light.impactOccurred(intensity: 0.55)
+    }
+
+    /// Cycling to the next avatar.
+    func cycleTick() {
+        guard isEnabled else { return }
+        rigid.impactOccurred(intensity: 0.6)
+    }
+
+    /// The OTP was wrong. A notification generator, not an impact: the system's
+    /// error pattern is a double-buzz that already reads as "rejected", and
+    /// nothing hand-rolled from impacts communicates it as clearly.
+    func failure() {
+        guard isEnabled else { return }
+        notify.notificationOccurred(.error)
+    }
+
+    /// The OTP was accepted.
+    func success() {
+        guard isEnabled else { return }
+        notify.notificationOccurred(.success)
     }
 
     // MARK: the pull ramp

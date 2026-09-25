@@ -33,7 +33,18 @@ final class MotionEngine: ObservableObject {
 
     // Settings — low frequency, safe for the controls to observe.
     @Published private(set) var motionAvailable = false
-    @Published var source: Source = .motion
+    /// `-motionSource Drag` pins the card flat, which is the only way to
+    /// screenshot it at rest: the Simulator has no gyro, so the default source
+    /// falls back to Demo and the card is always mid-swing.
+    @Published var source: Source = {
+        let a = ProcessInfo.processInfo.arguments
+        if let i = a.firstIndex(of: "-motionSource"), i + 1 < a.count,
+           let s = Source.allCases.first(where: {
+               $0.rawValue.lowercased() == a[i + 1].lowercased() }) {
+            return s
+        }
+        return .motion
+    }()
     /// 0 = frozen, 1 = no smoothing. Applied per-frame, frame-rate independent.
     @Published var smoothing: Double = 0.14
     /// Degrees of physical tilt that map to a full ±1 deflection.

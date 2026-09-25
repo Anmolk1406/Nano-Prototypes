@@ -2,25 +2,46 @@ import SwiftUI
 
 /// The prototypes this app hosts.
 enum AppScene: String, CaseIterable, Identifiable {
-    case qrCard    = "QR card"
+    case onboarding = "Onboarding"
+    case qrCard     = "QR card"
     case skinSelect = "Skin select"
+    case topUp      = "Top up"
+    case account    = "Account"
     var id: String { rawValue }
+
+    /// `-scene "Top up"` opens straight into a scene. The Simulator has no
+    /// touch input to script, so this is how a screen other than the default
+    /// gets captured without driving the controls sheet first.
+    static var launchOverride: AppScene? {
+        let a = ProcessInfo.processInfo.arguments
+        guard let i = a.firstIndex(of: "-scene"), i + 1 < a.count else { return nil }
+        let want = a[i + 1].lowercased()
+        return allCases.first { $0.rawValue.lowercased() == want }
+    }
 }
 
 struct ContentView: View {
     @StateObject private var motion = MotionEngine()
     @StateObject private var tuning = Tuning()
     @StateObject private var skinTune = SkinTuning()
+    @StateObject private var onbTune = OnboardingTuning()
+    @StateObject private var topUpTune = TopUpTuning()
+    /// The account page has one knob — play its entrance again.
+    @State private var acctReplay = 0
     @State private var showControls = false
-    @State private var scene: AppScene = .skinSelect
+    @State private var scene: AppScene = AppScene.launchOverride ?? .onboarding
+    @State private var step: OnboardingStep = OnboardingStep.launchOverride ?? .splash
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.white.ignoresSafeArea()
 
             switch scene {
+            case .onboarding: OnboardingFlow(skinTune: skinTune, tune: onbTune, step: $step)
             case .qrCard:     ShareScreen(motion: motion, t: tuning)
             case .skinSelect: SkinSelectScreen(tune: skinTune)
+            case .topUp:      TopUpFlow(tune: topUpTune)
+            case .account:    AccountScreen(replay: acctReplay)
             }
 
             // Dev affordances, not part of the design.
@@ -45,7 +66,10 @@ struct ContentView: View {
             if showControls {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    ControlsPanel(motion: motion, t: tuning, skin: skinTune, scene: $scene, expanded: $showControls)
+                    ControlsPanel(motion: motion, t: tuning, skin: skinTune, onb: onbTune,
+                              topUp: topUpTune,
+                              scene: $scene, step: $step, expanded: $showControls,
+                              accountReplay: $acctReplay)
                 }
                 .transition(.move(edge: .bottom))
             }
