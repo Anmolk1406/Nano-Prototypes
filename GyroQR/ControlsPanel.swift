@@ -251,6 +251,14 @@ struct ControlsPanel: View {
                 ForEach(OnboardingStep.allCases) { s in Text(s.rawValue).tag(s) }
             }
             .pickerStyle(.segmented)
+            // The flow ends on the kid's home, which has no way back to the
+            // start — this is the test UI's.
+            Button("Restart the flow") {
+                withAnimation(.easeInOut(duration: 0.3)) { step = .splash }
+            }
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .buttonStyle(.bordered)
+            .tint(.white.opacity(0.9))
             Toggle("Reject the OTP", isOn: $onb.otpAlwaysFails).font(rowFont)
             Text("Any 4 digits pass. Flip that to reach the rejection state \u{2014} "
                  + "its toast and error haptic have no other way in.")
@@ -310,6 +318,8 @@ struct ControlsPanel: View {
             slider("Cycle hint", $skin.hintCycleAmount, 0...0.4, enabled: skin.hintsEnabled)
             slider("Pull hint", $skin.hintPullAmount, 0...0.4, enabled: skin.hintsEnabled)
             slider("Repeat every", $skin.hintRepeat, 2...12, unit: "s", format: "%.0f",
+                   enabled: skin.hintsEnabled)
+            slider("Hand size", $skin.hintHandScale, 0.8...1.8, unit: "\u{00D7}", format: "%.2f",
                    enabled: skin.hintsEnabled)
         }
     }

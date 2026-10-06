@@ -46,6 +46,8 @@ final class SkinTuning: ObservableObject {
     /// How much of a real confirm pull the hint plays back.
     @Published var hintPullAmount: Double = 0.13
     @Published var hintRepeat: Double = 5.0
+    /// The coaching hand's size, scaled about the point the finger presses.
+    @Published var hintHandScale: Double = 1.3
 
     // gesture
     //
@@ -124,7 +126,7 @@ final class SkinTuning: ObservableObject {
     func reset() {
         entryEnabled = true; entryResponse = 0.55; entryStagger = 0.120
         entryDelay = 0.35; cycleAxis = .up
-        hintsEnabled = true; hintCycleAmount = 0.16; hintPullAmount = 0.13; hintRepeat = 5.0
+        hintsEnabled = true; hintCycleAmount = 0.16; hintPullAmount = 0.13; hintRepeat = 5.0; hintHandScale = 1.3
         throwTravel = 1.0; pullTravel = 1.0; cycleDetents = 5
         cycleDuration = SkinSelectSpec.cycleDuration
         cyclePreview = SkinSelectSpec.cyclePreview

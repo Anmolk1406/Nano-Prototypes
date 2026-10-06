@@ -136,6 +136,10 @@ struct ParentGradientTitle: View {
     /// The gradient's colour at 100%. The design ends it past the box —
     /// #7924FF at 104.2% — so what the box shows is the colour there.
     var endColor = Color(hex: 0x6F21EA)
+    /// Where black stops and the purple run starts, and where the purple is
+    /// reached — the design's own stops when they sit inside the box.
+    var startStop: Double = 0.52835
+    var endStop: Double = 1
 
     private static let rings: [(count: Int, scale: CGFloat)] = [(20, 1.0), (12, 0.55)]
 
@@ -162,9 +166,9 @@ struct ParentGradientTitle: View {
             .shadow(color: .black.opacity(0.15), radius: shadow.radius, x: 0, y: shadow.y)
 
             LinearGradient(stops: [
-                .init(color: .black, location: 0.52835),
+                .init(color: .black, location: startStop),
                 // #7924FF sits at 104.2%, past the end: its colour at 100%.
-                .init(color: endColor, location: 1),
+                .init(color: endColor, location: endStop),
             ], startPoint: start, endPoint: end)
             .frame(width: width, height: h)
             .mask { glyphs }

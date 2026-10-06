@@ -9,7 +9,7 @@ enum OnboardingStep: String, CaseIterable, Identifiable {
     case skin      = "Skin"
     case avatar    = "Avatar"
     case interests = "Interests"
-    case done      = "Done"
+    case done      = "Home"
 
     var id: String { rawValue }
 
@@ -38,6 +38,9 @@ struct OnboardingFlow: View {
     @State private var forward = true
     /// The next arrival fades instead of pushing — the intro into the picker.
     @State private var fading = false
+    /// The skin confirmed on the picker — the home wallet shows it. Starts on
+    /// the lego card the design draws, for when Home is opened directly.
+    @State private var chosenSkin = 11
 
     var body: some View {
         GeometryReader { geo in
@@ -85,7 +88,7 @@ struct OnboardingFlow: View {
                     .transition(.asymmetric(insertion: push, removal: .identity))
                     .zIndex(0)
             case .skin:
-                SkinSelectScreen(tune: skinTune, onContinue: { go(.avatar) })
+                SkinSelectScreen(tune: skinTune, onContinue: { go(.avatar) }, onChosen: { chosenSkin = $0 })
                     .transition(fading ? .asymmetric(insertion: .opacity, removal: pushOut) : push)
                     .zIndex(1)
             case .avatar:
@@ -96,7 +99,9 @@ struct OnboardingFlow: View {
                               onContinue: { _ in go(.done) }, onSkip: { go(.done) })
                     .transition(push)
             case .done:
-                DoneView { go(.splash) }
+                // The flow's end: the kid's home. Starting over is a test-UI
+                // button (controls sheet → Restart the flow), not part of it.
+                KidHomeView(skin: chosenSkin)
                     .transition(push)
             }
         }
@@ -135,45 +140,4 @@ struct OnboardingFlow: View {
 
 private extension OnboardingStep {
     var index: Int? { OnboardingStep.allCases.firstIndex(of: self) }
-}
-
-/// A closing card, so the flow has somewhere to land and can be replayed
-/// without relaunching the app.
-struct DoneView: View {
-    var onRestart: () -> Void
-
-    @State private var appeared = false
-
-    var body: some View {
-        ZStack {
-            LinearGradient(colors: [OnboardingSpec.C.brandBlue100, .white],
-                           startPoint: .top, endPoint: .bottom)
-            VStack(spacing: 14) {
-                Image("ic_check_circle")
-                    .resizable()
-                    .frame(width: 56, height: 56)
-                    .foregroundStyle(OnboardingSpec.C.successBold)
-                Text("You’re all set")
-                    .font(OnboardingSpec.F.h32)
-                    .tracking(-0.25)
-                    .foregroundStyle(OnboardingSpec.C.primary)
-                Text("That’s the whole onboarding flow")
-                    .font(OnboardingSpec.F.b16)
-                    .tracking(-0.15)
-                    .foregroundStyle(OnboardingSpec.C.tertiary)
-            }
-            .scaleEffect(appeared ? 1 : 0.9)
-            .opacity(appeared ? 1 : 0)
-
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-                CTABar { NeutralCTA(title: "Run it again") { onRestart() } }
-            }
-        }
-        .frame(width: OnboardingSpec.size.width, height: OnboardingSpec.size.height)
-        .onAppear {
-            Haptics.shared.success()
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.66)) { appeared = true }
-        }
-    }
 }

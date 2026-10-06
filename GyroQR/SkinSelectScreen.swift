@@ -13,6 +13,9 @@ struct SkinSelectScreen: View {
     /// Set by the onboarding flow so Continue advances the step. Standalone the
     /// screen keeps its own behaviour and resets itself for another run.
     var onContinue: (() -> Void)? = nil
+    /// The confirmed skin's asset number (11 for `skin_11`), as Confirm skin
+    /// is pressed — for the screens after this one to show it.
+    var onChosen: ((Int) -> Void)? = nil
 
     @State private var index = Self.startIndex    // committed front card
     @State private var drag = CGSize.zero
@@ -369,7 +372,8 @@ struct SkinSelectScreen: View {
                 return !Task.isCancelled && !interacted && !confirmed
             }
             defer { coach = nil }
-            guard await wait(0.7) else { return }
+            // Early: the hand is on screen while the deck is still landing.
+            guard await wait(0.45) else { return }
             while true {
                 // 1 — how to change
                 coach = .up; coachTick += 1
@@ -380,7 +384,8 @@ struct SkinSelectScreen: View {
                 }
                 guard await wait(T.drag) else { return }
                 withAnimation(.easeInOut(duration: T.settle)) { advance = 0; reveal = 0 }
-                guard await wait(T.total - T.lift) else { return }
+                // Straight into the next gesture once this hand has faded.
+                guard await wait(T.visibleEnd - T.lift) else { return }
                 // 2 — how to confirm
                 coach = .down; coachTick += 1
                 guard await wait(T.press) else { return }
@@ -388,7 +393,7 @@ struct SkinSelectScreen: View {
                 Haptics.shared.selectionTick()
                 guard await wait(T.drag) else { return }
                 withAnimation(.easeInOut(duration: T.settle)) { hintPull = 0 }
-                guard await wait(T.total - T.lift) else { return }
+                guard await wait(T.visibleEnd - T.lift) else { return }
                 withAnimation(.easeOut(duration: 0.2)) { coach = nil }
                 guard await wait(tune.hintRepeat) else { return }
             }
@@ -1205,6 +1210,7 @@ struct SkinSelectScreen: View {
     private var continueButton: some View {
         Button {
             if let onContinue {
+                onChosen?(SkinSelectSpec.asset(at: index))
                 onContinue()
             } else {
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) { reset() }
@@ -1381,7 +1387,13 @@ struct SkinSelectScreen: View {
             // the frame for `down`, and 12pt from its foot (180.6) for `up`.
             let frameTop: CGFloat = g == .down ? Self.handDownStart - 12
                                                : Self.handUpStart - (180.613 - 12)
+            // Scaled about the press point, so the finger still lands where
+            // the card is nudged from.
+            let press = UnitPoint(
+                x: (GestureHintHand.frameOrigin.x + GestureHintHand.trackX) / GestureHintHand.size.width,
+                y: (GestureHintHand.frameOrigin.y + (g == .down ? 12 : 180.613 - 12)) / GestureHintHand.size.height)
             GestureHintHand(gesture: g, tick: coachTick)
+                .scaleEffect(tune.hintHandScale, anchor: press)
                 .modifier(OnTexture(dark: hintInk))
                 .offset(x: SkinSelectSpec.size.width / 2
                             - (GestureHintHand.frameOrigin.x + GestureHintHand.trackX),

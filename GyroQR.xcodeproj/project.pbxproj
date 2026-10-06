@@ -28,6 +28,9 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A1000000000000000000F001 /* GyroQR */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFolders = (
+				Account,
+			);
 			path = GyroQR;
 			sourceTree = "<group>";
 		};

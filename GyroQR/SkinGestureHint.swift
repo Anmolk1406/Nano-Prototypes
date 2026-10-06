@@ -40,6 +40,10 @@ enum GestureHintTiming {
     static let lift = 1.05
     /// The animation's full length, fade included.
     static let total = 2.0
+    /// Where the last layer has faded out (the hand, 1.1 → 1.5). The file
+    /// runs to 2.0, but its last 0.5s is empty, so playback stops here and
+    /// the next gesture starts here.
+    static let visibleEnd = 1.5
     /// How long the card takes to settle back after the lift — the hand's
     /// own fade, 1.05 → 1.45.
     static let settle = 0.4
@@ -80,7 +84,8 @@ struct GestureHintHand: View {
 
     var body: some View {
         LottieView(dotLottieFile: Self.files[gesture.animation])
-            .playbackMode(.playing(.fromProgress(0, toProgress: 1, loopMode: .playOnce)))
+            .playbackMode(.playing(.fromProgress(0, toProgress: GestureHintTiming.visibleEnd / GestureHintTiming.total,
+                                                 loopMode: .playOnce)))
             .resizable()
             .frame(width: Self.size.width, height: Self.size.height)
             .id(tick)
