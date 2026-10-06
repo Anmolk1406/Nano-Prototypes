@@ -145,6 +145,11 @@ struct KidHomeView: View {
     /// to 61.6% of a 194 × 305 ellipse round (187.5, 271), #03194A at its rim,
     /// overlay blend).
     private var backdrop: some View {
+        // Every layer is pinned to the wallet's own 375 × 577 frame. The
+        // backdrop image is larger than that (435 × 773 from −30, −64), and
+        // as a sized child of the stack it set the stack's size, which slid
+        // the navy tint off the image — untinted bands showed down the right
+        // and along the foot.
         ZStack(alignment: .topLeading) {
             Color(hex: 0x03194A)
             Image(bgName)
@@ -152,7 +157,7 @@ struct KidHomeView: View {
                 .aspectRatio(contentMode: .fill)
                 .frame(width: 435, height: 772.92)
                 .clipped()
-                .offset(x: -30, y: -64)
+                .position(x: -30 + 435 / 2, y: -64 + 772.92 / 2)
             // Night: the design's navy over the skin's own art, so every skin
             // reads as its colours at dusk rather than as a black wash.
             Color(hex: 0x03194A).opacity(0.62)
