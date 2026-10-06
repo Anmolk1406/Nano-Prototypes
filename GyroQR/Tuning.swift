@@ -63,8 +63,8 @@ final class Tuning: ObservableObject {
     @Published var cardScale: Double = 1.0
     @Published var backdrop: Backdrop = .design
     @Published var showBounds = false
-    // On by default per the onboarding brief - flip either in Controls > Input
-    // if the card should lean with the device rather than against it.
+    // On: the card leans against the device's tilt. Turn either off in
+    // Controls > Input to have it lean with it instead.
     @Published var invertX = true
     @Published var invertY = true
 

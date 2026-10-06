@@ -1,4 +1,5 @@
 import SwiftUI
+import Lottie
 
 /// The account page, Figma `Account` (978:15007) — one load-in, then still.
 ///
@@ -87,7 +88,9 @@ struct AccountScreen: View {
             // backdrop rather than stretching it — the rays stay put, which
             // is the whole reason this is a clip and not a resize.
             ZStack(alignment: .topLeading) {
-                image("acct_bg", AccountSpec.backdrop)
+                HeaderRays(run: replay, held: Self.held)
+                    .frame(width: AccountSpec.backdrop.width,
+                           height: AccountSpec.backdrop.height)
                 avatar
                 stickers
                 props
@@ -120,14 +123,28 @@ struct AccountScreen: View {
             .offset(x: box.minX, y: box.minY)
     }
 
+    /// An image that scales about its **own** centre.
+    ///
+    /// Order is the whole point. `offset` moves the drawing but not the
+    /// layout frame, and `scaleEffect` scales about the layout frame — so
+    /// scaling *after* the offset scales about where the image would have
+    /// been at (0, 0), and the disc grows out of the header's top-left
+    /// corner instead of out of itself. Scaling first, while the frame and
+    /// the drawing still coincide, and then moving, is what pops it in place.
+    private func popped(_ name: String, _ box: CGRect, scale: CGFloat) -> some View {
+        Image(name)
+            .resizable()
+            .frame(width: box.width, height: box.height)
+            .scaleEffect(scale)
+            .offset(x: box.minX, y: box.minY)
+    }
+
     // MARK: the header's pieces
 
-    /// The pop. Scale about the disc's own centre — `scaleEffect` on a view
-    /// positioned by `offset` scales about the view's centre, which is the
-    /// disc's centre, so no anchor is needed.
+    /// The pop, about the disc's own centre — see `popped`.
     private var avatar: some View {
-        image("acct_avatar", AccountSpec.avatar)
-            .scaleEffect(shown ? 1 : AccountSpec.avatarFrom)
+        popped("acct_avatar", AccountSpec.avatar,
+               scale: shown ? 1 : AccountSpec.avatarFrom)
             .opacity(shown ? 1 : 0)
             .animation(AccountSpec.pop.delay(AccountSpec.delay.avatar), value: shown)
     }
@@ -135,8 +152,7 @@ struct AccountScreen: View {
     private var stickers: some View {
         ZStack(alignment: .topLeading) {
             ForEach(Array(AccountSpec.stickers.enumerated()), id: \.offset) { i, s in
-                image(s.image, s.frame)
-                    .scaleEffect(shown ? 1 : AccountSpec.stickerFrom)
+                popped(s.image, s.frame, scale: shown ? 1 : AccountSpec.stickerFrom)
                     .opacity(shown ? 1 : 0)
                     .animation(AccountSpec.pop.delay(AccountSpec.delay.stickers[i]),
                                value: shown)
@@ -208,6 +224,37 @@ struct AccountScreen: View {
                 .foregroundStyle(.white)
         }
         .frame(width: AccountSpec.buttonSize, height: AccountSpec.buttonSize)
+    }
+}
+
+/// The header's backdrop, arriving.
+///
+/// `acct_rays.lottie`, authored in After Effects (`Tools/ae/`): the starburst
+/// streams out of its vanishing point behind the avatar in five soft copies,
+/// with thin speed lines shot along it, then the rays themselves ease in from
+/// 90% and settle on a spring to exactly the design's backdrop. Its last frame
+/// *is* `acct_bg`, to 1/255, so when it stops there is nothing to swap.
+///
+/// The placeholder is its first frame — the header's purple with no rays in
+/// it — so the moment the archive takes to load is invisible. Replay rebuilds
+/// the view, which reloads and plays it from the top.
+private struct HeaderRays: View {
+    let run: Int
+    let held: Bool
+
+    var body: some View {
+        if held {
+            Image("acct_bg_base").resizable()
+        } else {
+            LottieView {
+                try await DotLottieFile.named(AccountSpec.raysAnimation)
+            } placeholder: {
+                Image("acct_bg_base").resizable()
+            }
+            .playing(loopMode: .playOnce)
+            .resizable()
+            .id(run)
+        }
     }
 }
 

@@ -1,0 +1,29 @@
+SUPER CRITICAL: The generated React+Tailwind code MUST be converted to match the target project's technology stack and styling system.
+1. Analyze the target codebase to identify: technology stack, styling approach, component patterns, and design tokens
+2. Convert React syntax to the target framework/library
+3. Transform all Tailwind classes to the target styling system while preserving exact visual design
+4. Follow the project's existing patterns and conventions
+DO NOT install any Tailwind as a dependency unless the user instructs you to do so.
+
+Node ids have been added to the code as data attributes, e.g. `data-node-id="1:2"`.
+
+These styles are contained in the design: Default/Bold/Body: Font(family: "SF Pro Text", style: Semibold, size: 17, weight: 600, lineHeight: 22, letterSpacing: -0.40799999237060547), H40/Extrabold: Font(family: "base/font/family/primary", style: base/font/weight/extrabold, size: font/heading/h40/size, weight: 800, lineHeight: font/heading/h40/line-height, letterSpacing: font/heading/h40/letter-spacing), B14/Medium: Font(family: "base/font/family/primary", style: base/font/weight/medium, size: font/body/b14/size, weight: 500, lineHeight: font/body/b14/line-height, letterSpacing: font/body/b14/letter-spacing), B16/SemiBold: Font(family: "base/font/family/primary", style: base/font/weight/semibold, size: font/body/b16/size, weight: 600, lineHeight: font/body/b16/line-height, letterSpacing: font/body/b16/letter-spacing), B13/Regular: Font(family: "base/font/family/primary", style: base/font/weight/regular, size: font/body/b13/size, weight: 400, lineHeight: font/body/b13/line-height, letterSpacing: font/body/b13/letter-spacing), A16/SemiBold: Font(family: "base/font/family/primary", style: base/font/weight/semibold, size: font/action/a16/size, weight: 600, lineHeight: font/action/a16/line-height, letterSpacing: font/action/a16/letter-spacing).
+
+Component descriptions: The following components have usage descriptions or documentation links defined in Figma. These descriptions provide important context about the intended usage, best practices, and any constraints for each component. Follow these guidelines when implementing or using these components.
+
+## M-Icon/System-Icon/cross
+**Node ID:** 712:12965
+
+close, cross, x, cancel, dismiss, remove, exit
+
+## M-SecondaryNeutralButton
+**Node ID:** 712:12880
+
+A secondary call-to-action button. Lower visual weight than the primary — pair with a primary button when you need a supportive or alternative action (e.g. "Cancel" next to "Save", "Shop more" next to "Add to cart"). Usage: - Use as the supporting action when a primary CTA is also present. - Don't use as the only action on a screen — promote to M-Button/Primary instead. - Keep labels short and verb-first ("Cancel", "Edit", "Shop more"). - Use Loader state on submit/async actions; the spinner replaces the label and icons while preserving the button's footprint. - Toggle Show icon left / Show icon right to add directional or supporting glyphs from M-Icon/\*. Sizes (height): H56, H52, H44, H36. States: Default, Pressed, Loader, Disabled.
+
+## M-NeutralButton
+**Node ID:** 727:2
+
+Neutral, dark-inverted CTA. Visually quieter than M-Button/Primary — use when multiple actions coexist on light surfaces (e.g., "Schedule", "Select location", "Login/Sign up") or when the page already has a primary action elsewhere. 20 variants: 5 sizes × 4 states. Usage: - Use for secondary-weight CTAs on light backgrounds where a high-emphasis navy/near-black button reads better than action-blue. - Don't stack two Neutral buttons next to each other — pair with M-Button/Secondary (outline) for the adjacent action. - Don't use on dark/inverted surfaces — the inverted fills will disappear; use M-Button/Secondary or a light-surface variant instead. - H56 for main sheet/form CTAs; H52/H44 for inline actions; H36 for rows/tables; H32 for dense toolbars and compact contexts. Notes: - Loader state keeps label & icons at opacity 0 so the button doesn't reflow. - Corner smoothing is 60% on all sizes — don't rebuild with plain rounded rectangles. - Disabled shares the same muted-on-subtle-surface pattern as Primary.
+
+Images and SVGs will be stored as constants, e.g. const image = 'https://www.figma.com/api/mcp/asset/550e8400-e29b-41d4-a716-446655440000.png'. These constants will be used in the code as the source for the image, ex: <img src={image} />. Image assets are stored on a remote server for 7 days and can be fetched using the provided URLs until they expire.

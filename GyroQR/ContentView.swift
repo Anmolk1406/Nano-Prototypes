@@ -2,11 +2,17 @@ import SwiftUI
 
 /// The prototypes this app hosts.
 enum AppScene: String, CaseIterable, Identifiable {
-    case onboarding = "Onboarding"
+    case onboarding = "Kid's onboarding"
     case qrCard     = "QR card"
     case skinSelect = "Skin select"
     case topUp      = "Top up"
     case account    = "Account"
+    case button     = "Button"
+    case parent     = "Parent"
+    /// Experimental: the share QR on the holo base with running shines.
+    case shineLab   = "QR shine lab"
+    /// The approval Lotties, one at a time.
+    case lottieLab  = "Lotties"
     var id: String { rawValue }
 
     /// `-scene "Top up"` opens straight into a scene. The Simulator has no
@@ -26,9 +32,14 @@ struct ContentView: View {
     @StateObject private var skinTune = SkinTuning()
     @StateObject private var onbTune = OnboardingTuning()
     @StateObject private var topUpTune = TopUpTuning()
+    @StateObject private var buttonTune = ButtonLabTuning()
+    @StateObject private var shineTune = ShineLabTuning()
     /// The account page has one knob — play its entrance again.
     @State private var acctReplay = 0
-    @State private var showControls = false
+    /// Bumped by the controls sheet to start the parent flow again.
+    @State private var parentReplay = 0
+    /// `-controls` opens the controls sheet at launch.
+    @State private var showControls = ProcessInfo.processInfo.arguments.contains("-controls")
     @State private var scene: AppScene = AppScene.launchOverride ?? .onboarding
     @State private var step: OnboardingStep = OnboardingStep.launchOverride ?? .splash
 
@@ -42,11 +53,15 @@ struct ContentView: View {
             case .skinSelect: SkinSelectScreen(tune: skinTune)
             case .topUp:      TopUpFlow(tune: topUpTune)
             case .account:    AccountScreen(replay: acctReplay)
+            case .button:     ButtonLabScreen(tune: buttonTune)
+            case .parent:     ParentFlow(motion: motion, tuning: tuning).id(parentReplay)
+            case .shineLab:   ShineLabScreen(motion: motion, t: tuning, tune: shineTune)
+            case .lottieLab:  LottieLabScreen()
             }
 
             // Dev affordances, not part of the design.
             VStack(alignment: .trailing, spacing: 8) {
-                if scene == .qrCard {
+                if scene == .qrCard || scene == .shineLab {
                     TiltReadout(out: motion.out,
                                 source: motion.source,
                                 available: motion.motionAvailable)
@@ -67,9 +82,9 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
                     ControlsPanel(motion: motion, t: tuning, skin: skinTune, onb: onbTune,
-                              topUp: topUpTune,
+                              topUp: topUpTune, button: buttonTune, shine: shineTune,
                               scene: $scene, step: $step, expanded: $showControls,
-                              accountReplay: $acctReplay)
+                              accountReplay: $acctReplay, parentReplay: $parentReplay)
                 }
                 .transition(.move(edge: .bottom))
             }
@@ -78,7 +93,7 @@ struct ContentView: View {
         .onDisappear { motion.stop() }
         .onChange(of: scene) { _, new in
             // The display link is only worth running for the scene that reads it.
-            if new == .qrCard { motion.start() } else { motion.stop() }
+            if new == .qrCard || new == .shineLab { motion.start() } else { motion.stop() }
         }
     }
 }

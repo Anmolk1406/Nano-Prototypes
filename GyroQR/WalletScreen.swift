@@ -227,7 +227,7 @@ struct WalletScreen: View {
     // MARK: the cut, the list, the receipt
 
     private var cut: some View {
-        PocketShape()
+        WalletCutShape()
             .fill(.white)
             .frame(width: WalletSpec.cutWidth,
                    height: WalletSpec.size.height - crest + 60)
@@ -383,7 +383,7 @@ private struct PocketRegion: Shape {
     }
 
     func path(in rect: CGRect) -> Path {
-        PocketShape().path(in: CGRect(x: WalletSpec.cutX, y: crest,
+        WalletCutShape().path(in: CGRect(x: WalletSpec.cutX, y: crest,
                                       width: WalletSpec.cutWidth,
                                       height: rect.height - crest + 60))
     }

@@ -147,6 +147,21 @@ extension CardSpec {
                       wobble: 0.1),
         ])
 
+    /// Experimental, for the shine lab only: the same card with the holo base
+    /// in place of the chrome frame. The base is its own coverage, so it is
+    /// also the light mask; its 1055 × 1491 artwork is 409.85 tall at the
+    /// card's width, 0.7pt more than the chrome frame's box.
+    static let inviteHolo: CardSpec = {
+        var c = CardSpec.invite
+        c.layers[0].image = "slab_base"
+        c.layers[0].frame.size.height = 290 * 1491 / 1055
+        c.lightMask = "slab_base"
+        // The chrome frame drew its own halo; the holo base has none, so the
+        // card casts a little more of its own.
+        c.shadowStrength = 0.16
+        return c
+    }()
+
     /// Back to front, and shallower than the old card's stack — this is one
     /// moulded object rather than a panel with things floating over it, so the
     /// whole range is 10pt instead of 28.

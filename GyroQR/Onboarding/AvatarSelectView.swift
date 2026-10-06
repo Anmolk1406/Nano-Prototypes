@@ -1,16 +1,43 @@
 import SwiftUI
+import Lottie
 
-/// Step 5 — `Profile Pic` (845:50352).
+/// Step 5 — `Profile Pic` (1113:27374).
 ///
-/// Built from the design's own avatar renders and its type/spacing tokens; the
-/// picker interaction is mine, since the frame only shows a resting state. Swipe
-/// the big avatar either way to cycle, or tap a chip to jump — both land on the
-/// same `select` path so the haptic fires once per change however you got there.
+/// The design's five 3D avatars, each on its own gradient disc, with a row
+/// of them to pick from. The purple swoosh and the two chrome stars are a
+/// Lottie built in After Effects (comp `AVATAR_STROKE_STARS`, 375 × 812 so
+/// it lays straight over the stage): the swoosh draws on behind the avatar,
+/// the stars pop in over it. Swipe the big avatar either way to cycle, tap a
+/// chip to jump, or shake to shuffle — all land on `select`, so the haptic
+/// fires once per change however you got there.
 struct AvatarSelectView: View {
     @ObservedObject var tune: OnboardingTuning
+    var onBack: () -> Void = {}
     var onContinue: (Int) -> Void
 
-    private let avatars = (1...15).map { "onb_av_\($0)" }
+    /// One avatar: its render, and the colour its disc runs to from white.
+    struct Avatar {
+        let image: String
+        let tint: UInt32
+        /// Where the render sits over the 72pt chip circle — its size and
+        /// top-left, from each chip's mask group; the hero scales these up.
+        let width: CGFloat, height: CGFloat, x: CGFloat, y: CGFloat
+        /// Where the disc's gradient starts, as a fraction above its top.
+        let lead: CGFloat
+        /// The swoosh behind it. The first is the design's #A477FF; the
+        /// others are picked to sit against each disc rather than match it.
+        let swoosh: UInt32
+    }
+
+    static let avatars: [Avatar] = [
+        .init(image: "onb3d_av_1", tint: 0x4ED7DE, width: 129.502, height: 194.253, x: -31.962, y: 6.683, lead: 7.32445, swoosh: 0xA477FF),
+        .init(image: "onb3d_av_2", tint: 0x5759E3, width: 177.477, height: 266.216, x: -53.363, y: 8.841, lead: 5.96249, swoosh: 0xFF7A8A),
+        .init(image: "onb3d_av_3", tint: 0xA9DE4E, width: 101.507, height: 203.017, x: -16.799, y: 0.483, lead: 6.64347, swoosh: 0x4E8BFF),
+        .init(image: "onb3d_av_4", tint: 0x4ED7DE, width: 131.716, height: 197.574, x: -31.164, y: 5.906, lead: 3.91955, swoosh: 0xFFB23F),
+        .init(image: "onb3d_av_5", tint: 0x3598D2, width: 135.787, height: 203.681, x: -27.783, y: 7.472, lead: 1.87661, swoosh: 0xFF7AD9),
+    ]
+    private var avatars: [Avatar] { Self.avatars }
+
     @State private var index = 0
     @State private var drag: CGFloat = 0
     @State private var appeared = false
@@ -23,52 +50,60 @@ struct AvatarSelectView: View {
     /// Pulses the hint chip when a shake is picked up, so the gesture is
     /// acknowledged even before the avatar has finished moving.
     @State private var hintPulse = false
+    @State private var smallKick = StarKick()
+    @State private var bigKick = StarKick()
 
     var body: some View {
-        ZStack(alignment: .top) {
-            backdrop
+        ZStack(alignment: .topLeading) {
+            Color.white
+            KidGridBackdrop()
 
-            VStack(spacing: 0) {
-                StepDots(active: 1)
-                    .padding(.top, 76)
+            // Behind the avatar: the swoosh only, drawn white and tinted
+            // here, so a change of avatar can ease its colour across.
+            decor(only: "STROKE")
+                .colorMultiply(Color(hex: avatars[index].swoosh))
+                .animation(.easeInOut(duration: 0.35), value: index)
 
-                VStack(spacing: 8) {
-                    Text("Choose an avatar\nfor yourself")
-                        .font(OnboardingSpec.F.h32)
-                        .tracking(-0.25)
-                        .lineSpacing(2)
-                    Text("You can change this any time")
-                        .font(OnboardingSpec.F.b16)
-                        .tracking(-0.15)
-                        .foregroundStyle(OnboardingSpec.C.tertiary)
-                }
-                .multilineTextAlignment(.center)
-                .foregroundStyle(OnboardingSpec.C.primary)
-                .frame(width: 279)
-                .padding(.top, 20)
+            hero.position(x: 187.5, y: 400)
 
-                hero.padding(.top, 28)
+            // Over it: the stars, one view each so each can twitch about its
+            // own centre when the avatar changes. Same file, same start, so
+            // all three stay in step.
+            decor(only: "STAR_SM")
+                .scaleEffect(smallKick.scale, anchor: Self.smallStar)
+                .rotationEffect(smallKick.turn, anchor: Self.smallStar)
+            decor(only: "STAR_BIG")
+                .scaleEffect(bigKick.scale, anchor: Self.bigStar)
+                .rotationEffect(bigKick.turn, anchor: Self.bigStar)
 
-                shakeHint.padding(.top, 18)
+            KidTitle(lines: [
+                KidTitleLine(text: "Choose an avatar", frame: CGRect(x: 45, y: 118.485, width: 286, height: 48), angle: 35.5795),
+                KidTitleLine(text: "for yourself", frame: CGRect(x: 90.505, y: 149.665, width: 194, height: 48), angle: 46.5235),
+            ], bars: [
+                CGRect(x: 104.297, y: 147.607, width: 171.947, height: 24.712),
+                CGRect(x: 55.562, y: 139.479, width: 215.139, height: 16.006),
+            ])
 
-                Spacer(minLength: 0)
+            // Not in the frame: the gesture is invisible unless it is named.
+            // It sits in the gap between the disc (ends ~y 540) and the row
+            // (starts at 621).
+            shakeHint.position(x: 187.5, y: 580)
 
-                row.padding(.bottom, 20)
+            row.offset(y: 621.07 - 14)
 
-                CTABar {
-                    NeutralCTA(title: "Continue") { onContinue(index) }
-                }
+            KidHeaderBar(active: 1, onBack: onBack)
+
+            ParentActionBar {
+                ParentPrimaryButton(title: "Continue") { onContinue(index) }
             }
-            .frame(height: OnboardingSpec.size.height)
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 18)
         }
         .frame(width: OnboardingSpec.size.width, height: OnboardingSpec.size.height,
-               alignment: .top)
-        .onShake { shuffle() }
+               alignment: .topLeading)
+        .onShake(threshold: tune.shakeThreshold, peaks: Int(tune.shakePeaks.rounded()),
+                 onPeak: { tune.shakeLastPeak = $0 }) { shuffle() }
         .onAppear {
             Haptics.shared.prepare()
-            withAnimation(.spring(response: 0.46, dampingFraction: 0.84)) { appeared = true }
+            appeared = true
             if ProcessInfo.processInfo.arguments.contains("-avatarDemo") { runDemo() }
             // `simctl` has no shake command, so the shuffle is reachable by
             // launch argument as well as by the real gesture.
@@ -78,9 +113,8 @@ struct AvatarSelectView: View {
         }
     }
 
-    /// The gesture is invisible unless it is named, so it gets a highlighted
-    /// chip rather than the grey caption the other hints use — it is an offer,
-    /// not a label.
+    /// An offer rather than a label, so a highlighted chip rather than the
+    /// grey caption the other hints use.
     private var shakeHint: some View {
         HStack(spacing: 7) {
             Image(systemName: "iphone.gen3.radiowaves.left.and.right")
@@ -97,6 +131,59 @@ struct AvatarSelectView: View {
         .scaleEffect(hintPulse ? 1.08 : 1)
         .animation(.spring(response: 0.3, dampingFraction: 0.55), value: hintPulse)
         .animation(.easeOut(duration: 0.2), value: shuffling)
+        .allowsHitTesting(false)
+    }
+
+    private static let layers = ["STROKE", "STAR_SM", "STAR_BIG"]
+
+    /// `avatar_stroke_stars` with every layer but `layer` switched off by
+    /// opacity. The swoosh is drawn white, for `colorMultiply` to tint.
+    private func decor(only layer: String) -> some View {
+        var view = LottieView(animation: .named("avatar_stroke_stars"))
+            .playing(loopMode: .playOnce)
+            .resizable()
+        for other in Self.layers where other != layer {
+            view = view.valueProvider(FloatValueProvider(0), for: AnimationKeypath(keypath: "\(other).Transform.Opacity"))
+        }
+        if layer == "STROKE" {
+            view = view.valueProvider(ColorValueProvider(LottieColor(r: 1, g: 1, b: 1, a: 1)),
+                                      for: AnimationKeypath(keypath: "STROKE.**.Color"))
+        }
+        return view
+            .frame(width: 375, height: 812)
+            .allowsHitTesting(false)
+    }
+
+    // The stars' centres on the 375 × 812 canvas, from the comp.
+    private static let smallStar = UnitPoint(x: 280.512 / 375, y: 273.963 / 812)
+    private static let bigStar = UnitPoint(x: 84.569 / 375, y: 483.326 / 812)
+
+    struct StarKick {
+        var scale: CGFloat = 1
+        var turn: Angle = .zero
+    }
+
+    /// The stars' response to a change of avatar — kept small on purpose: a
+    /// quick swell and a few degrees of turn, sprung back with a little
+    /// overshoot, about 0.5s in all; the big star follows the small one by
+    /// 60ms.
+    private func kickStars() {
+        func kick(_ k: Binding<StarKick>, turn: Double, scale: CGFloat, after delay: Double) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                withAnimation(.spring(response: 0.22, dampingFraction: 0.7)) {
+                    k.wrappedValue = StarKick(scale: scale, turn: .degrees(turn))
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.55)) { k.wrappedValue = StarKick() }
+                }
+            }
+        }
+        // The turns are opposite ways, so the pair reads as a twinkle, not a
+        // shared nudge. Keep the small star's anticlockwise: turned
+        // clockwise its full-canvas Lottie view stopped drawing after the
+        // first kick (seen in the Simulator; the big star was unaffected).
+        kick($smallKick, turn: -8, scale: 1.08, after: 0)
+        kick($bigKick, turn: 6, scale: 1.06, after: 0.06)
     }
 
     /// Shake to land somewhere random.
@@ -139,17 +226,6 @@ struct AvatarSelectView: View {
         }
     }
 
-    /// `BG` 845:50353 — a 188pt brand-blue wash at the top of the screen that
-    /// the header sits on.
-    private var backdrop: some View {
-        VStack(spacing: 0) {
-            LinearGradient(colors: [OnboardingSpec.C.brandBlue100, .white],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: 188)
-            Color.white
-        }
-    }
-
     // MARK: hero
 
     /// Blur carried by the drag itself, so the gesture reads as scrubbing
@@ -159,17 +235,14 @@ struct AvatarSelectView: View {
         return min(CGFloat(tune.avatarBlur) * 0.6, abs(drag) * CGFloat(tune.dragBlurAmount))
     }
 
+    /// `Group 2147227458`: a 269pt disc with a 5.8pt white rim outside it,
+    /// its white-to-tint gradient turned 15°, and the render masked to a
+    /// 272pt circle over it.
     private var hero: some View {
         ZStack {
-            ForEach(Array(avatars.enumerated()), id: \.offset) { i, name in
+            ForEach(avatars.indices, id: \.self) { i in
                 let active = i == index
-                Image(name)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 280, height: 280)
-                    .clipShape(Circle())
-                    .overlay(Circle().strokeBorder(.white, lineWidth: 6))
-                    .shadow(color: .black.opacity(0.10), radius: 18, y: 10)
+                heroFace(avatars[i])
                     // Both sides of the swap animate on one curve, so the eye
                     // reads a single dissolve instead of two fades crossing.
                     .blur(radius: active ? 0 : inactiveBlur)
@@ -177,12 +250,12 @@ struct AvatarSelectView: View {
                     .opacity(active ? 1 : 0)
             }
         }
-        .frame(width: 280, height: 280)
+        .frame(width: 284, height: 284)
         .overlay {
             if tune.avatarStyle == .material {
                 Circle()
                     .fill(.ultraThinMaterial)
-                    .overlay(Circle().strokeBorder(.white.opacity(0.5), lineWidth: 6))
+                    .frame(width: 280.77, height: 280.77)
                     .opacity(flash)
                     .allowsHitTesting(false)
             }
@@ -190,6 +263,7 @@ struct AvatarSelectView: View {
         .blur(radius: scrubBlur)
         .rotationEffect(.degrees(Double(drag) * 0.02))
         .offset(x: drag * 0.35)
+        .contentShape(Circle())
         .gesture(
             DragGesture(minimumDistance: 8)
                 .onChanged { drag = $0.translation.width }
@@ -200,6 +274,38 @@ struct AvatarSelectView: View {
                 }
         )
         .animation(.spring(response: tune.avatarResponse, dampingFraction: 0.85), value: index)
+    }
+
+    private func heroFace(_ a: Avatar) -> some View {
+        ZStack {
+            Circle()
+                .fill(disc(a))
+                .frame(width: 269.235, height: 269.235)
+                .rotationEffect(.degrees(-15))
+                .padding(-5.769)
+                .background(Circle().fill(.white))
+            render(a, circle: 272.272)
+        }
+        // The mask circle sits 0.9pt above the disc's centre.
+        .frame(width: 284, height: 284)
+    }
+
+    /// White to the avatar's tint, starting a little above the circle as
+    /// each disc's gradient does.
+    private func disc(_ a: Avatar) -> LinearGradient {
+        LinearGradient(colors: [.white, Color(hex: a.tint)],
+                       startPoint: UnitPoint(x: 0.5, y: -a.lead / 71.197), endPoint: .bottom)
+    }
+
+    /// The render placed over a circle `circle` points across, clipped to it.
+    private func render(_ a: Avatar, circle: CGFloat) -> some View {
+        let k = circle / 72
+        return Image(a.image)
+            .resizable()
+            .frame(width: a.width * k, height: a.height * k)
+            .offset(x: (a.x + a.width / 2 - 36) * k, y: (a.y + a.height / 2 - 36) * k)
+            .frame(width: circle, height: circle)
+            .clipShape(Circle())
     }
 
     private var inactiveBlur: CGFloat {
@@ -219,52 +325,26 @@ struct AvatarSelectView: View {
 
     // MARK: row
 
-    /// The avatar row.
-    ///
-    /// Fifteen of them, so this scrolls — a fixed `HStack` comes to 948pt on a
-    /// 375pt screen. What is arriving at either edge is blurred, faded and
-    /// small, and sharpens as it comes in, which is Image Playground's
-    /// suggestion rows: the reference recording changes a row's contents in
-    /// 0.2–0.4s episodes with the items staggered across them, so the effect
-    /// belongs to where an item *is* rather than to a transition played once.
-    ///
-    /// `scrollTransition` is what makes that a property of position rather
-    /// than something driven by hand. `phase.value` runs −1 at the leading
-    /// edge, 0 fully on screen, +1 at the trailing edge, and it is live during
-    /// the drag, so the reveal tracks the finger and resolves itself when the
-    /// scroll settles — no offset arithmetic and no geometry readers.
+    /// `Frame 2147242415`: 72pt chips 12 apart from x 16, the selected one in
+    /// a 2pt #0F61FF ring 4pt out. Five of them come to 408pt, wider than the
+    /// screen, so the row scrolls — the design shows the fifth half off the
+    /// edge.
     private var row: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 HStack(spacing: 12) {
-                    ForEach(Array(avatars.enumerated()), id: \.offset) { i, name in
-                        Button { select(i) } label: { chip(name, on: i == index) }
+                    ForEach(avatars.indices, id: \.self) { i in
+                        Button { select(i) } label: { chip(avatars[i], on: i == index) }
                             .buttonStyle(.plain)
                             .id(i)
-                            .scrollTransition(.interactive, axis: .horizontal) { view, phase in
-                                let t = abs(phase.value)
-                                return view
-                                    .blur(radius: t * CGFloat(tune.rowBlur))
-                                    .opacity(1 - t * tune.rowFade)
-                                    .scaleEffect(1 - t * CGFloat(tune.rowShrink))
-                            }
                     }
                 }
-                // Half a chip of inset, so the first and last can reach the
-                // middle of the row instead of stopping against the edge with
-                // the blur still on them.
-                .padding(.horizontal, 26)
-                // And room above and below. A `ScrollView` clips to its own
-                // bounds, and the chip's layout height is only its 52pt — the
-                // selection ring sits 5.5pt outside that and a 9pt blur
-                // spreads further still, so both were being sliced off flat
-                // top and bottom. The frame below is 52 + 2 × 14.
+                .padding(.horizontal, 16)
+                // Room for the ring, which sits outside the chip.
                 .padding(.vertical, 14)
-                .scrollTargetLayout()
             }
             .scrollIndicators(.hidden)
-            .scrollTargetBehavior(.viewAligned)
-            .frame(height: 80)
+            .frame(width: 375, height: 100)
             // The hero can also be changed by swiping it or shaking the phone,
             // and a selection the row is not showing is worse than no row.
             .onChange(of: index) { _, i in
@@ -276,17 +356,20 @@ struct AvatarSelectView: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: index)
     }
 
-    private func chip(_ name: String, on: Bool) -> some View {
-        Image(name)
-            .resizable()
-            .aspectRatio(contentMode: .fill)
-            .frame(width: 52, height: 52)
-            .clipShape(Circle())
-            .overlay(
-                Circle().strokeBorder(on ? OnboardingSpec.C.actionBold : .clear,
-                                      lineWidth: 3)
-                .padding(-4)
-            )
+    private func chip(_ a: Avatar, on: Bool) -> some View {
+        ZStack {
+            Circle()
+                .fill(disc(a))
+                .frame(width: 71.197, height: 71.197)
+                .offset(x: 0.376 + 71.197 / 2 - 36, y: 0.645 + 71.197 / 2 - 36)
+            render(a, circle: 72)
+        }
+        .frame(width: 72, height: 72)
+        .overlay(
+            Circle().strokeBorder(OnboardingSpec.C.actionBold, lineWidth: 2)
+                .frame(width: 84, height: 84)
+                .opacity(on ? 1 : 0)
+        )
     }
 
     /// Wraps, so cycling never dead-ends at either edge.
@@ -295,6 +378,7 @@ struct AvatarSelectView: View {
         guard next != index else { return }
         index = next
         Haptics.shared.cycleTick()
+        kickStars()
 
         guard tune.avatarStyle == .material else { return }
         // The scrim has to peak mid-change and clear, so it needs its own

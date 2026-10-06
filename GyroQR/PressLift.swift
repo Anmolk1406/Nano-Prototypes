@@ -44,9 +44,12 @@ struct PressLift: ButtonStyle {
         return configuration.label
             .background {
                 // Under the label, so the shadow is the control's and not the
-                // type's. `.clear` still casts — the shape's alpha is what the
-                // shadow is built from, not its colour.
-                shape.fill(.black.opacity(0.001))
+                // type's. The shape is filled *opaque*: a shadow's strength is
+                // the caster's alpha times the shadow colour's, so the
+                // near-clear fill this used to cast from threw a shadow at a
+                // thousandth of its opacity — the elevation never showed. Both
+                // callers draw an opaque shape of their own over this one.
+                shape.fill(.black)
                     .shadow(color: .black.opacity(s.opacity), radius: s.radius, y: s.y)
             }
             .scaleEffect(down ? scale : 1)

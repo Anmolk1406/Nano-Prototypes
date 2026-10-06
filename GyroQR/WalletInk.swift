@@ -55,9 +55,32 @@ enum WalletInk {
     /// the backdrop's height — the empty page's balance at 0.60…0.76, the
     /// filled page's at 0.60…0.67 — so one band covers both, and the sides
     /// are trimmed because the copy is centred.
-    private static let band = (top: 0.55, bottom: 0.78, left: 0.2, right: 0.8)
+    private static let band = Band(top: 0.55, bottom: 0.78, left: 0.2, right: 0.8)
 
     private static func measure(_ name: String) -> Scheme? {
+        prefersDarkInk(name, in: band).map { $0 ? onLight : onDark }
+    }
+
+    /// A band of an image, as fractions of its width and height from the top
+    /// left.
+    struct Band: Hashable { var top, bottom, left, right: Double }
+
+    private struct Key: Hashable { let name: String; let band: Band }
+    private static var inkCache = [Key: Bool?]()
+
+    /// Whether the design's dark ink would out-contrast white over `band` of
+    /// the image `name` — the same rule the wallet page uses, for any screen
+    /// that sets type over artwork. Nil if the image can't be read. Cached, so
+    /// it is cheap enough to ask every frame.
+    static func prefersDarkInk(_ name: String, in band: Band) -> Bool? {
+        let key = Key(name: name, band: band)
+        if let hit = inkCache[key] { return hit }
+        let dark = meanLuminance(name, in: band).map { contrast(inkLuminance, $0) > contrast(1.0, $0) }
+        inkCache[key] = dark
+        return dark
+    }
+
+    private static func meanLuminance(_ name: String, in band: Band) -> Double? {
         guard let cg = UIImage(named: name)?.cgImage else { return nil }
         let w = 48, h = 96
         var buf = [UInt8](repeating: 0, count: w * h * 4)
@@ -90,8 +113,7 @@ enum WalletInk {
             }
         }
         guard n > 0 else { return nil }
-        let bg = sum / Double(n)
-        return contrast(1.0, bg) >= contrast(inkLuminance, bg) ? onDark : onLight
+        return sum / Double(n)
     }
 
     /// sRGB relative luminance, WCAG's definition.

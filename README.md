@@ -75,7 +75,7 @@ straight from the command line.
 
 | Scene | What it is |
 |---|---|
-| **Onboarding** | The six-step flow — Figma `845:48674`. |
+| **Kid's onboarding** | The six-step flow — Figma `845:48674`. |
 | **QR card** | Two share screens — Figma `980:15528` and `940:62757`. Gyro tilt, elevation parallax. Pick between them under **Controls ▸ Card**. |
 | **Skin select** | The wallet-skin picker — Figma `794:30694`. Swipe up to cycle 22 skins, drag down to confirm. |
 | **Top up** | Request top up — Figma `935:62729`. Wallet → amount → the confirmation animation in the card skin's own colours → back to the wallet with the money in. |
@@ -486,6 +486,10 @@ well, so the content is already invisible by the time the mount threshold
 removes it — otherwise the removal itself is the thing you see.
 
 `-skinAbort` drives the case: pull to 0.6 of the span, hold, release short.
+
+Once a card has settled, a back chevron sits left of the step dots, and dragging the card up 55% of 140pt lifts it back out of the pocket to the deck (the sheet sinks as it goes). `-skinDemo -skinLift` ends the demo with that lift instead of Continue.
+
+The pocket is Figma `shape` (1027:18114): flat-topped with a 20pt notch and a dy −20, blur 12, 16% shadow. The wallet screen keeps the previous shape as `WalletCutShape`. Once the card is in, the pocket sheet keeps rising until it covers the whole screen, and once it has stopped, the confirm screen (Figma `Skin Option 35`, 1027:17958) fades in over it: a wash across the top, the card with its drop shadow, and, on the two sticker cards (skin_09 and skin_14) only, three stickers (`SkinConfirmStage.swift`). The wash and rays start fading in 0.2s into the settle. The title is never faded: the dark version is drawn above the sheet, masked to its shape, and grows from 32 to 40pt with the settle, so the type turns from white to dark exactly where the sheet passes under it. The wash is the design's grey mixed slightly toward the card's own colour. The controls sheet's *Card tint* slider sets how much, 0.35 by default. The rays are a looping Lottie, `skin_confirm_rays.lottie` (`SkinConfirmRays`), built in After Effects: `python3 Tools/build_confirm_rays_layers.py` renders the design's four rays with their progressive blur baked in, `Tools/ae/build_confirm_rays.jsx` builds the CONFIRM_RAYS comp (750 × 518, 60fps, a seamless 4s loop: the rays sway about the point their funnels narrow to, stretch and breathe, and a fifth copy sweeps wide across them), `Tools/ae/export_confirm_rays.jsx` exports it, and `python3 Tools/pack_confirm_rays.py` packs it. The Lottie is the white rays only; the colour under them and the white fades across the header's foot are the app's, so the colour follows the card while the rays stay white. It's mounted only once a card is chosen. While the sheet moves (rising, or sinking as the card is lifted back) only the plain white sheet shows: the confirm layers fade out the moment a lift starts and come back only once the sheet is still again.
 `-skinSlow 6` stretches the retract, which is otherwise over in less time than
 two screenshots take.
 
@@ -1329,7 +1333,7 @@ recording was shot against whichever skin that wallet was wearing, and the
 point of reading the palette off the art is that it stops being a fixed
 choice.
 
-## Onboarding flow
+## Kid's onboarding flow
 
 Figma section `Flow for claude` (845:48674) — six steps, wired end to end. It is
 the app's default scene; **Controls ▸ Scene** switches to the two standalone
@@ -1380,10 +1384,13 @@ Figma frames, so Dynamic Type scaling would only make that comparison lie.
 
 ### The two media assets
 
-**The splash clip is VP9-in-WebM, which iOS cannot decode at all.** `AVPlayer`
-shows a black screen and says nothing useful about why. `Tools/make_onboarding.py`
-transcodes it to H.264; the source is `yuv420p` with no alpha, so an opaque mp4
-loses nothing. That script also saves the clip's final frame, because the email
+**The splash clip ships as HEVC, not the WebM deliverable.** The source is the
+AE render `Splash / Nano Splash new.mp4`; its VP9 WebM (CRF 32, ~450 KB) is what
+the web gets, but iOS cannot decode VP9 at all: `AVPlayer` shows a black screen
+and says nothing useful about why. `Tools/make_onboarding.py` encodes the bundled
+`splash_burst.mp4` as HEVC tagged `hvc1` at CRF 22: ~560 KB, VMAF 97.0 against a
+98.7 lossless ceiling, level with the WebM's 97.2. The source is `yuv420p` with
+no alpha, so an opaque mp4 loses nothing. That script also saves the clip's final frame, because the email
 step's backdrop *is* that frame — the design rebuilds the same burst from ~60
 vector layers and blend modes, and re-deriving it in SwiftUI would be a lot of
 work for a picture the video already contains exactly. Splash → email is
@@ -1490,8 +1497,8 @@ build cannot:
   white page, and `NeutralCTA` gives that state an edge to sit inside.
 - **`Tuning.invertX` / `invertY` now default to true.** Asked for as "invert the
   x & y settings by default"; those are the two toggles under **Controls ▸
-  Input**, which belong to the QR card's gyro. Flip either back there if that
-  wasn't the intent.
+  Input**, which belong to the QR card's gyro. Since reversed: both are false
+  again, asked for as "invert both axis relative to current settings".
 
 ### The email field, and why a control can be hittable and dead
 
@@ -2102,7 +2109,7 @@ it has settled does anything appear inside it. Doing it in that order is what
 makes the header read as *making room* for a profile rather than as a panel
 that happens to be resizing while things fly about inside it.
 
-The backdrop is a fixed-size image anchored at the top and **clipped** to the
+The backdrop is a fixed-size layer anchored at the top and **clipped** to the
 current height, not stretched into it. The rays therefore stay where they are
 and the expansion reveals more of them, which is what a header opening looks
 like; resizing the image slides every ray as it goes.
@@ -2140,98 +2147,105 @@ makes the three read as one gesture rather than three.
 
 ### Taking the header apart
 
-`Tools/build_account_layers.py`, and the method is the profile card's: a layer
-that is going to move has to be cut to its own alpha, or it carries a slab of
-backdrop and draws a box around itself the moment it leaves home.
+`Tools/build_account_layers.py` — the third version, and the first that does
+not start from the finished render.
 
-**The backdrop is patched, not replaced.** `978:15076` is the starburst image
-on its own, and fitting it to the finished header the usual way — a
-locally-weighted per-channel affine, which is what the two gradient rects
-above it amount to — comes out at **12.8/255 mean, p95 75**. That is far worse
-than the same fit on the profile card, because here the rects flatten the rays
-hard and the source clips to white where they converge, so there is nothing
-left to fit.
+**Why the first two left ghosts.** Both took Figma's render of the header and
+patched out whatever had to move — the props, the avatar, the design's own
+status bar — filling each hole with a fitted estimate of the backdrop behind
+it. A patch is an estimate, and every one left a faint copy of what used to be
+there: a ghost of the ball where the ball rests, of the star, of the status bar
+along the top. Invisible while everything sits at home, because then the prop
+covers its own ghost; obvious the moment anything is in flight, which on a
+load-in page is the whole point.
 
-The fix is not a better fit. It is to notice that the fit only has to be right
-*where something moves*, and that its error is smooth — a level and a contrast,
-not structure. So the fit's own residual is measured where both images are
-known, carried into the holes by a normalised blur, and added back: **1.27/255
-mean, p95 3.9**. Then the base is the *render*, with only the vacated regions
-patched in through a feathered mask. The rays, the status bar and everything
-else stay pixel-exact, and the fit is trusted only where a layer has to come
-out from behind.
+**So the backdrop is rebuilt from its recipe instead.** The CSS gives it
+exactly, and nothing was ever in front of it:
 
-**The props are solved from two renders, not taken from the uploads.** The
-first version of this took each prop's alpha from its original upload and its
-colour from the header render. That is the obvious shortcut and it is wrong:
-the uploads are the *untransformed* source, and the CSS shows this group
-applies transforms the layer panel never mentions — the ball is rotated
-−13.02° and drawn at 48.3pt inside its 58pt box. Its upload's silhouette
-therefore does not match its export's, and no amount of care about placement
-fixes a matte that is the wrong shape.
+| Layer | What it is |
+|---|---|
+| header fill | linear `#2188FF → #0A49B8`, top to bottom |
+| `978:15076` | the starburst upload, **colour-dodged** onto it |
+| `978:15077` | `#7D43EA` in **color** blend mode, full bleed |
+| `978:15078` | radial `#7D43EA@0 → #4C17B0@1`, centre (188, 116.5), radii 797 × 237 |
 
-What does work is the same two-ground solve the profile card's badges use. A
-single composite is one equation in two unknowns; two composites over
-*different* grounds is two:
+It reproduces the render to **0.61/255 mean, p99 2.0** wherever the render
+shows backdrop — which is the check that the recipe is read right. Two details
+it took to get there: the dodge and the color blend act on sRGB values
+directly, and the radial gradient interpolates colour *and* alpha together
+(straight, not premultiplied), which makes its middle 10/255 brighter than a
+fade to the end colour. Below the type, where the skyline vectors of
+`978:15079` peek in, the backdrop is the render — nothing that moves reaches
+that strip.
 
-```
-C1 = F·α + G1·(1-α)
-C2 = F·α + G2·(1-α)     ⟹     1-α = (C1-C2)/(G1-G2)
-```
+**Each prop is its own upload at its CSS transform.** The ball is 48.31pt
+rotated −13.02° in its 57.95 box; the star fills its box. Composited over the
+rebuilt backdrop they land on the render at 2.6 and 1.3/255 — antialiasing —
+and at the CSS position to within a third of a point. The bolt is paler and
+cooler in the render than in its file, an image adjustment the CSS does not
+report, so its alpha is the upload's (an exact edge) and its colour is the
+upload's mapped through a quadratic fitted against the render inside the ball.
 
-Both are to hand, and the reason they are is worth writing down: **Figma
-exports a node without its siblings.** These props come back matted on the
-file's blue page canvas, not on the header's purple — so `C1` is the export,
-`G1` is that canvas fitted as a plane through the export's own border ring,
-`C2` is the finished header and `G2` is the recovered backdrop. The solve
-needs to know nothing about rotations, crops or scales.
+An earlier cut had searched the props' positions against the *patched*
+backdrop and put the ball 4pt low. The search was fitting the patch.
 
-**And the backdrop has to be holed by silhouette, not by box.** This is the
-step that makes the solve work at all, and it took a wrong answer to find. The
-solve reads "these two renders agree here, so alpha is zero" from the clear
-margin inside each prop's box — so the backdrop has to be *right* in that
-margin. Holing the whole box puts the margin inside the fit's extrapolated
-region, where it came out 15/255 adrift, and 15/255 there is enough to make
-the solve call the transparent corners opaque: the props came out as solid
-squares. The fix is to hole each prop by its own support, which comes from the
-export alone — where it differs from its canvas — before anything is solved.
-Channel spread across the three props went from 0.36 / 0.16 / 0.05 to
-0.07 / 0.03 / 0.03.
+**The avatar scales about its own centre.** It did not: `scaleEffect` came
+after the `offset` that places it, and `offset` moves the drawing but not the
+layout frame, so the disc scaled about where it would have been at (0, 0) and
+grew out of the header's top-left corner. Scaling first, while the frame and
+the drawing coincide, and then moving is `AccountScreen.popped`. The stickers
+had the same bug.
 
-**Positions come from the CSS box, not the layer panel.** For a node with a
-transform the two disagree, and only the CSS is the rectangle that gets
-rendered: the panel puts the ball's top at 300.64 and the CSS at 289.76,
-because the panel reports the unrotated node and the CSS the box its rotation
-occupies. An independent template match agrees with the CSS to a tenth of a
-point.
+### The rays entrance
 
-**Two things are reused rather than cut.** The three interest stickers are the
-same nodes as the profile QR card's badges, so they are the same three assets:
-template-matched against this header they land at 1.11 / 1.66 / 1.44 out of
-255, which is the check that they really are the same art. And the nav bar is
-the wallet's.
+The backdrop does not just appear: the starburst **streams out of its
+vanishing point** behind the avatar, speed lines shoot outward along it, and
+after about a second the rays settle into the design's placement. It is a
+dotLottie, `GyroQR/Account/acct_rays.lottie`, authored in After Effects and
+played by `HeaderRays` in place of the static `acct_bg`.
 
-**One number does not come from the frame.** The layer panel reports the avatar
-ellipse at 171.46 square; its own export comes back 439px at 3×, which is
-146.33pt, and 171.46 is 17% too big for the hole in the render. The export
-wins.
+| Layer | What it does |
+|---|---|
+| `SPEED_LINES` | 26 radial streaks, each a trim-path dash run from the centre past the corner, staggered over 0.04–0.82s |
+| `RAYS` | the starburst as its own plane, easing in from 90% at 0.52s and landing at 100% on a spring |
+| `RAYS_FLOW_1…5` | soft-edged copies of the starburst flying out from 22% to 175%, 0.12s apart |
+| `Base` | the header's purple with no starburst — a vector rectangle with a gradient fill |
 
-One more thing goes, for a different reason: the design's own status bar. It
-was baked into the backdrop, and the device draws its own — the page had two
-clocks on it.
+**Lottie-safe by construction.** Image layers and shape layers only: no
+effects, no blend modes, no merge paths. The two things After Effects can do
+that Lottie cannot are both baked:
 
-Verified the way the card was: compositing the seven layers back over each
-other and diffing against Figma's own render of the header gives **mean
-2.04/255, p95 12, p99 30**, with the residual confined to one-pixel rims. The
-built app against the same render measures 4.6 mean over the whole screen,
-the extra being native type against rasterised type.
+* **The spring** is FrameForge's inertial bounce on `RAYS`' scale —
+  `amplitude 0.06, frequency 2.6, decay 6`, overshooting to 100.8% and settled
+  by 1.35s — baked to 60 keyframes with FrameForge, and its last key pinned to
+  exactly 100% so the final frame is the design.
+* **The blends.** The starburst is colour-dodged and color-blended in Figma,
+  and neither survives into Lottie. So the rays plane is the *result* of those
+  blends, solved as the least-transparent RGBA that reproduces the backdrop
+  when laid over the base: exact to 0.08/255.
+
+The copies that fly outward are feathered to nothing 200pt from the vanishing
+point, inside the plane's nearest edge, so a copy at any scale shows rays
+thinning out and never a boundary. The final plane never goes below 90%: its
+top edge is 210pt above the vanishing point and the header's is 187, so
+anything smaller would show it.
+
+`HeaderRays` shows the animation's frame 0 as its placeholder while the
+archive loads — the purple with no rays — so there is no flash, and Replay
+rebuilds it to play from the top.
+
+**The Base is a vector gradient, not the rebuilt plane.** It was the plane;
+it was replaced in AE with a rectangle and a two-stop linear gradient, which
+is far lighter. It sits within 3–12/255 of the design, darker through the
+middle — a linear ramp cannot carry the design's radial vignette. Its stops
+are in the comp to adjust.
 
 ### Driving it without touch
 
 | Argument | Effect |
 |---|---|
 | `-scene Account` | Opens on this page. |
-| `-accountEntry` | Holds the header collapsed and empty. The whole thing is over in under a second, so this is the only way to see where it starts from. |
+| `-accountEntry` | Holds the header collapsed and empty, on the rays' frame 0. |
 
 ```bash
 xcrun simctl launch <udid> com.noon.gyroqr -scene Account
@@ -2239,27 +2253,256 @@ xcrun simctl launch <udid> com.noon.gyroqr -scene Account
 
 ### Rebuilding its layers
 
-`Tools/account_src/` holds the node exports, checked in:
+`Tools/account_src/` holds the sources, checked in:
+
+| File | Node |
+|---|---|
+| `raw_rays1.png` | `978:15076`'s upload — the starburst |
+| `raw_ball_r2.png`, `raw_star_r1.png`, `raw_bolt_r1.png` | the props' uploads, with real alpha |
+| `header3x.png` | `978:15074` rendered whole — used only to check, and for the skyline strip and the bolt's grade |
+| `avatar3x.png` | `978:15212`, the avatar ellipse |
+| `body3x.png` | `978:15228`, everything below the header |
 
 ```bash
-python3 Tools/build_account_layers.py     # needs numpy, scipy, Pillow
+python3 Tools/build_account_layers.py     # asset catalog + Tools/ae/account_rays/
 ```
 
-To refresh them, `download_assets` one node at a time and keep the `export`.
-The `rawImages` are not needed and should not be used — see above.
+It prints the rebuild's error against the render and each plane's, so a bad
+source shows up as a number rather than as a ghost on the device.
 
-| File | Node | Scale |
+### Rebuilding the rays
+
+In After Effects, with any project open (the comp goes in its own folder,
+nothing else is touched, and the project is not saved):
+
+```bash
+osascript -e 'tell application "Adobe After Effects 2026" to DoScriptFile "'$PWD'/Tools/ae/build_account_rays.jsx"'
+```
+
+Then the spring — select `RAYS` ▸ Scale, FrameForge **Spring** (0.06 / 2.6 /
+6), **Bake** — and export and pack:
+
+```bash
+osascript -e 'tell application "Adobe After Effects 2026" to DoScriptFile "'$PWD'/Tools/ae/export_lottie.jsx"'
+python3 Tools/pack_account_rays.py
+```
+
+`export_lottie.jsx` samples every animated property on every frame, which
+bakes eases and expressions alike, then drops the samples a straight line
+already predicts. ExtendScript cannot read gradient colours, so a gradient
+fill is exported with a request instead: the layer is rendered alone and
+`pack_account_rays.py` reads its colours back along the gradient's own line.
+The packer refuses a JSON with an expression, an effect, a blend mode or a
+merge path in it. The build script never throws — an uncaught error in AE
+opens a modal that blocks every scripting channel until it is clicked — so a
+failure shows up in `Tools/ae/account_rays/build_log.txt` instead.
+
+## The button lab
+
+Figma `Button` (1005:41915) — the `M-NeutralButton` alone on the page — as a
+scene for trying press interactions. `ButtonLab.swift`.
+
+The button is the node verbatim, read through the plugin API because the CSS
+export flattens its stroke to one grey: a fill `#212121 → #0D0D0D` over the
+lower half, a 1pt inside stroke `#E0E0E0 → #575757` top to bottom, a pale inner
+glow along the top edge and a black one along the bottom, 12pt circular
+corners.
+
+### The round replica
+
+`RoundDome.swift` — the reference recording's own button, a glossy red dome
+77pt across on a warm page, rebuilt 1:1 from gradients and shadows before its
+light goes onto any other shape. It is the scene's **Round** style.
+
+Every number is read off the recording, which is a phone at 3× so its pixels
+are this screen's: radial profiles in eight directions and dense vertical
+ones down five columns, at rest (frame 38) and pressed (frame 50). The dome
+is centred at (604.5, 573.5) with a radius of 115px; everything is in units of
+that radius, `R`.
+
+| | Rest — raised | Pressed — sunk |
 |---|---|---|
-| `header3x.png` | `978:15074`, the whole header | 3x |
-| `bg3x.png` | `978:15076`, the starburst | 3x |
-| `avatar3x.png` | `978:15212`, the avatar ellipse | 3x |
-| `ball3x.png` | `978:15095` | 3x |
-| `star3x.png` | `978:15093` | 3x |
-| `fluff3x.png` | `978:15083` | 3x |
-| `body3x.png` | `978:15228`, everything below the header | 3x |
+| face | radial falloff from the light at (0.08, −0.95)R: coral (253, 131, 108) → maroon (52, 10, 15) | vertical ramp, dark red → bright (195, 60, 42) over the lower half |
+| top | a faint rim, fading into the page | the **lip's shadow** — a dark *blob* at the top centre, a Gaussian ~0.3R wide, not a band round the edge — under a strong **light-pink rim** that straddles the edge and is gone 40° either side of vertical |
+| bottom | dark, into a tight **contact shadow** | a thin dark rim, 0.1R deep, into the page shadow |
+| page | a soft shadow, **the same in both states** — fitted over 64 samples at 1.06R across, 0.197R lower, σ 0.134R, 86% of #35070D | same |
 
-The script prints the frame of every plane it cuts; paste those into
-`AccountSpec`.
+The things that made the difference, each found by measuring rather than by
+eye: the shadow on the page does not change, so everything that changes is
+inside the face; the lip's shadow is concentrated at the top centre; and the
+pressed rim is *brighter than any blend of the face with the page*, so it is
+drawn over the softened edge, not inside the clipped face. SwiftUI's inner
+shadows could not do any of this — they run all the way round a circle, and
+stacked they buried the rim under the lip — so each is an explicit crescent:
+a circle minus a shifted copy of itself, blurred.
+
+Against the reference, over the dome and its surroundings with the mark and
+the reference's text ring left out: **6.1/255 mean at rest, 7.6 pressed**,
+every region's signed error within ~8. The mark is a stand-in in type (SF
+Pro Expanded Bold, the E reversed), not the brand's artwork. The press is a
+75ms crossfade: the reference changes in 4–5 frames, and every sampled pixel
+moves monotonically from one end to the other. No scale — the dome is the
+same width to the pixel in both frames.
+
+### The Continue button
+
+`SlabDome.swift` — the replica's light on the design's own button, and the
+scene's default style, **Continue**: 351 × 52, 12pt corners drawn with iOS's
+continuous curve (corner smoothing), the design's greys, `Continue` in
+Noontree SemiBold 16.
+
+Every layer is the dome's, in the same order. What the dome measured in
+radii this measures in **half-heights** (26pt) — the light is vertical, and
+the height is what carries it — so the page shadow, the contact shadow, the
+lip and the bottom rim keep the dome's proportions. The rest face's radial
+falloff becomes an elliptical one taking the button's proportions.
+
+**The colours are the reference's, mapped onto the design's greys by
+luminance**: one straight line through the design's anchors, the foot at
+#0D0D0D and the body's #212121, so every stop keeps its brightness *relative*
+to the others — which is what the effect is made of. Coral lands on #727272
+at the light; the pressed face's bright lower half on #404040, brighter than
+the raised face's middle, as the reference's is. At rest the button keeps the
+design's own 1pt stroke, #E0E0E0 → #575757, as its rim light.
+
+Two numbers do not come across by proportion, and both are the pressed rim:
+
+* **its weight.** 0.15 of a half-height is a 4pt hairline on this button
+  where the dome's rim is 6pt, so it reaches 0.24 of a half-height instead.
+* **its colour.** Luminance-mapped it lands on mid grey, and even the
+  stroke's #E0E0E0 reads as a pale strip against a #F7F7F7 page. The
+  reference's rim is *brighter than its page* in red (245 against 239) —
+  that is what makes it read as light — so here it is white.
+
+**Shine** and **Shine width** in the controls sheet set the pressed rim —
+its strength, 0 to 1, and its reach as a multiple of the calibrated one —
+on both the Continue button and the round replica; 1 and 1× are the
+calibrated look. `-buttonShine 0.5 -buttonShineWidth 1.5` sets them at launch.
+
+### In the app
+
+The Continue button is now **the app's primary button**: `DomeButtonStyle`,
+frozen at the settings picked in the lab —
+
+| | |
+|---|---|
+| scale while held | 1.012×, spring 0.26s / 0.68 |
+| light change | 75ms each way |
+| shine | 1.0, width 0.47× |
+| haptic | Impact · Heavy at 1.0 on press, a light 0.4 tap on release (`PressHaptics.flow`, which honours the app-wide haptics switch) |
+| drop shadow | 0.5 of the replica's (page and contact shadows together) — `DomeShadow.shared`, one live value, so the lab's **Drop shadow** slider moves every primary button in the app; `-buttonShadow 0.3` at launch |
+
+— on every `M-NeutralButton` in the flows: onboarding's `NeutralCTA` (the
+avatar, email and interests steps and *Run it again*), the top-up's *Request
+top up*, the invite's *Share invite* and skin select's *Continue*. The surface
+(`DomeSurface`) sizes itself to whatever it is drawn behind, so the 56pt
+onboarding CTA and the 52pt share button take the same light at their own
+heights. A disabled button draws no dome and keeps its flat muted look —
+sunk-in on something that cannot be pressed would be a promise it does not
+keep. The wallet's white *Request top up* pill is a different component,
+`M-NeutralRoundButton`, and keeps `PressLift`.
+
+One lab slider is not in the frozen set: **Lift shadow** only ever applied
+to the Lift style, so it had no effect on the Continue button it was tuned
+on, and the flows match what was seen.
+
+Two other styles, from the controls sheet — **Round** above, and **Lift**,
+the first brief: scale up 3% on a spring and the fill and rim swap ends,
+crossfaded over 80ms. An earlier **Push in**, which tried the reference's
+effect by eye before the replica existed, is gone.
+
+**A shadow is only as strong as what casts it.** An early page shadow here
+came out at almost nothing, and so, it turned out, had `PressLift`'s
+elevation since it was written: both cast from a `.black.opacity(0.001)`
+copy of the shape, and SwiftUI multiplies the shadow by the caster's alpha.
+Both now cast from an opaque copy under the control's own opaque surface.
+
+**The haptic** fires on touch-down, from `ButtonStyle.isPressed`. Two engines
+to compare: *Impact* (the five UIKit presets at a chosen intensity — Heavy at
+1.0 is the strongest single tap the system gives, and the default) and *Core
+Haptics* (a transient event with intensity and **sharpness** set directly —
+low sharpness is a thud, high a click, and it is most of what makes a tap read
+as strong). A second, lighter tap on release is there to try, off by default.
+
+`-scene Button -pressHeld` pins the pressed look for screenshots;
+`-buttonStyle Round` (or `Lift`) opens on another style.
+
+## The parent flow — adding a kid
+
+Figma section `Flow for claude` (1015:44810): eleven frames on six pages,
+`GyroQR/Parent/`. Scene **Parent**.
+
+| Page | Frames | |
+|---|---|---|
+| child | 1, 2 | names, birthday, gender → *Continue* plays the celebration (2) over it, then on |
+| email | 3, 4 | the kid's email, the field focused on arrival → *Continue* raises the confirm sheet (4) |
+| intro | 5 | "Introducing Kiaan's nano wallet" — plays its entrance, holds 1.7s from arrival (or a tap), then on |
+| rules | 6, 7, 8 | auto- or manual-approve; manual opens its limit options (7); the limit field brings up the number pad (8) |
+| address | 9, 10 | pick an address → *Continue* plays Let's Go (10) over it |
+| invite | 11 | the invite QR screen the app already has |
+
+**Between pages, a crossfade.** The progress bar is the one element every
+page shares, so it lives above the pages, stays put and fills on the
+`interpolatingSpring(stiffness: 320, damping: 28)` spring while the page under
+it fades (0.35s ease-in-out) to the next. A drill (the old page shrinking as the
+new one slid over it) made the flow feel hectic, so it went, and with it the
+close button: every page past the first has Back. Email → intro is the
+showpiece: the confirm sheet fades with its page while the intro's stars
+settle from 112% and a few degrees turned, the wallet card swings down from
+above the screen tipped 24° back about its horizontal axis and rights itself
+with a small overshoot, and the copy fades up under it. Frames 2, 4 and 10 are
+overlays on their page and 7 and 8 are states of 6, so they don't
+crossfade. The flow ignores the safe area at its root:
+a page's clip and scale take the frame they are given, and inside the safe
+area that frame stops short of the status bar and the home indicator.
+
+**The art.** The header art is the supplied dotLotties — `Bot Asset`
+(child), `Email-Pop` (email), `Nano-Shield` (rules), `Address-Pin` (address)
+— and `Lets Go` is frame 10 whole, as `onboard_celebration.json` (in the app
+as `parent_celebration.json`, "Kiaan is 10 Years Old") is frame 2. Each header Lottie's position was found by
+screenshotting the page with and without it (`-parentNoArt`), which isolates
+its pixels, and sliding them over the Figma render until the header matched
+best. The shared header background is one 3× export: it is SVGs with blur
+filters, which Xcode's SVG renderer drops, rendered in headless Chrome
+(`Tools/parent_src/render/`).
+
+**The primary buttons** are `DomeButtonStyle`, the app's button.
+
+**Where it stands against the design**, per band, /255 (the status bar is the
+device's; the action bars differ by the button's own light):
+
+| Page | header | title | body |
+|---|---|---|---|
+| child (1) | 7.8 | 11.2 | 2.7 |
+| email sheet (4) | 0.6 | 2.4 | 6.1 |
+| intro (5) | 2.1 | 4.0 | 2.9 |
+| rules, auto (6) | 1.8 | 8.5 | 2.8 |
+| rules, manual (7) | 1.8 | 10.3 | 3.6 |
+| address (9) | 1.7 | 7.6 | 3.4 |
+
+The title band's remainder is the Lotties' last frames against Figma's still
+art, which are close but not the same pose. (Measured before the close
+button came out.)
+
+Three things this took, worth knowing for the next screen built from Figma:
+
+* **CSS sizes a border inside the box.** A card with `p-12` and a 1pt
+  border has its content 13 in; an overlaid SwiftUI stroke adds nothing, so
+  the padding has to carry the extra point.
+* **Multi-line copy goes in one box per line.** `lineSpacing` has to guess
+  the face's natural line height and drifts by a point or more per line;
+  `ParentLines` puts each line in a box its Figma line height tall.
+* **A crossfade can't lean on a removal transition.** Swapping the page
+  by `.id` (or a one-element `ForEach`) faded the new page in but dropped the
+  old one in a single frame, so every change dipped to white. The model now
+  keeps the page being left (`leaving`) mounted and opaque under the new one
+  until the fade has covered it, then drops it unseen.
+* **`object-cover` images crop.** An image taller than its box is scaled to
+  fill and cut top and bottom — stretching it into the box squashes it.
+
+`-scene Parent -parentPage rules` opens on a page (every page before it is on
+the stack, so Back works); `-parentManual` and `-parentSheet` open on
+frames 7 and 4; `-parentHold` keeps the intro up. `-parentWalk` pushes to the next page and back, for recording the page push. `-parentAutoContinue` focuses the first-name field, then presses Continue, to replay the celebration hand-off. `-sheetStretch 1` (with `-parentSheet`) holds the email sheet at full stretch. `-parentTickDemo` (on the address page) ticks and unticks addresses, for recording the checkbox. `-buttonPress 0.95` sets how far the buttons shrink while held and `-buttonBounce 0.7` how much that scale springs past its target (the controls sheet has the same sliders, with the spring's response; the Button screen shows the primary and the white variant together).
 
 ## Running it
 
@@ -2345,6 +2588,20 @@ motion one.
 
 ## Three things worth knowing
 
+**The controls sheet can overflow the device's stack, and the simulator will
+not show it.** `ControlsPanel` once built every scene's sections inline in one
+`body`. In a debug build Swift gives every branch of that closure its own
+stack slots even though only one runs, and once the Button lab's controls
+were added the closure outgrew the main thread's stack — 1MB on an iPhone,
+8MB in the simulator, which is why every UI test passed while the phone
+crashed (`EXC_BAD_ACCESS` in `___chkstk_darwin`, "stuck midway"). Each
+scene's sections are now built inside `Deferred`, a view whose content is
+made in its own `body`, which SwiftUI calls in a separate update: the
+closure that crashed now reserves under 3.3KB, and the largest frame in the
+sheet is 7.3KB. Adding a section: put it in a `Deferred`. `-controls` opens
+the sheet at launch, for checking this on a device.
+
+
 **Never let a control observe the tilt.** `tilt` changes every display frame.
 Anything observing it rebuilds at 120 Hz, and a `Slider` or `Picker` rebuilt
 that often never gets to finish a gesture — the controls sheet renders fine and
@@ -2421,3 +2678,31 @@ steps only matter if the Figma design itself changes:
   then smears into a dark halo.
 - `Tools/figma_reference_3x.png` is the untouched Figma card export, for
   regression-checking fidelity.
+
+## QR shine lab (experimental)
+
+`-scene "QR shine lab"` opens the invite share screen (Figma 980:15528) with a holo card in place of the chrome frame. It isn't wired into any flow. The flows' invite screen is unchanged: `ShareScreen` takes an optional `inviteCard` / `inviteExtra` / `inviteUnder`, and only the lab passes them.
+
+**The screen.** Backdrop, title, sparkles, OR row, link and Share invite are all the existing invite screen. The card is `CardSpec.inviteHolo`: the invite card's panel, QR and name on the holo base (`slab_base`), which also serves as its light mask. The white sticker halo that Figma's frame render carries is drawn under the card from the base's own silhouette (`HoloHalo`).
+
+**The shines** are the designer's shines layer cut into its twelve stars (`slab_shine_01…12`). Each pixel is shared between cores by a soft partition, measured 2.5× shorter along a star's edge. Each sprite is then faded out on a cosine window: along the edge before it reaches its neighbour, 55–105px across it, and to nothing round every other star's core. The windows are what stop the glow showing a hard band once neighbours slide apart or sit on different bevels.
+
+**Tracks.** Every star rides one of the rim's two bevel highlights, which were found as the brightness ridges across each side:
+
+| Side | Outer | Inner |
+|---|---|---|
+| Left | x 62 | x 101 |
+| Right | x 992 | x 953 |
+| Top | y 65 | y 104 |
+| Bottom | y 1403 | y 1358 |
+
+Stars alternate outer and inner along each side. Top and bottom stars run along x with the left–right tilt; side stars run along y with the forward–back tilt.
+
+**Staying on the edge.** Each core stops 24px short of its straight run's end: x 184–870 for top and bottom, y 190–1280 for the sides. Each side's light is also masked to the rim:
+
+- **Along the edge**, it fades out past the corner.
+- **Across the edge**, it may glow outward past the silhouette but stops at the panel's edge (112px, plus a 60px fade).
+
+**The corner star** sits on the inner arc at 45° and glints when the card tips toward the top-left.
+
+`-shineTracks` draws the eight tracks. `-motionSource Demo` sweeps the tilt, for recording.

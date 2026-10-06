@@ -1,0 +1,48 @@
+{
+  "comp": [
+    750,
+    518
+  ],
+  "pivot": [
+    375.0,
+    406.77
+  ],
+  "rays": [
+    {
+      "name": "RAY_A",
+      "file": "ray_a.png",
+      "x": -58,
+      "y": 28,
+      "w": 866,
+      "h": 432,
+      "opacity": 0.52
+    },
+    {
+      "name": "RAY_B",
+      "file": "ray_b.png",
+      "x": 149,
+      "y": -94,
+      "w": 452,
+      "h": 554,
+      "opacity": 1.0
+    },
+    {
+      "name": "RAY_C",
+      "file": "ray_c.png",
+      "x": 14,
+      "y": -112,
+      "w": 722,
+      "h": 567,
+      "opacity": 0.65
+    },
+    {
+      "name": "RAY_D",
+      "file": "ray_d.png",
+      "x": 248,
+      "y": -64,
+      "w": 254,
+      "h": 519,
+      "opacity": 0.52
+    }
+  ]
+}

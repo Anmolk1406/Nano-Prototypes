@@ -3,10 +3,14 @@
 
 Two jobs, both of which have a trap in them:
 
-1. **Splash clip.** The export is VP9-in-WebM. iOS has no VP9 decoder at all, so
-   `AVPlayer` shows nothing and reports no error worth reading — the screen is
-   just black. Transcode to H.264. The source is `yuv420p` with no alpha, so an
-   opaque mp4 loses nothing. The clip's last frame is also saved as a still,
+1. **Splash clip.** The source is the After Effects render `Splash / Nano 2x
+   1Oct.mp4` (H.264, 750 x 1624, 60 fps, 1.93s, ~16.6 Mbps, 3.9 MB). The
+   designer's deliverable is a VP9 WebM, but iOS has no VP9 decoder: `AVPlayer`
+   shows a silent black screen. So the bundle gets HEVC instead, tagged `hvc1`
+   (the tag AVFoundation needs), at CRF 22 = 498 KB, VMAF 97.4 against a 99.1
+   lossless ceiling. That matches the WebM (VP9 CRF 32, 417 KB, VMAF 97.5).
+   The previous 2.8s cut (`Nano Splash new.mp4`) scored the same at these
+   settings: HEVC ~560 KB / 97.0, WebM ~450 KB / 97.2. There is no alpha, so an opaque mp4 loses nothing. The clip's last frame is also saved as a still,
    because the email step's backdrop is exactly that frame.
 
 2. **Interest icons.** Figma's per-node export of these came back with the
@@ -16,10 +20,10 @@ Two jobs, both of which have a trap in them:
    5 x 2 grid of icon-over-caption cells, so take the first occupied row band in
    each cell and the caption is left behind.
 
-Usage:  python3 Tools/make_onboarding.py [--src DIR]
+Usage:  python3 Tools/make_onboarding.py [--splash FILE]
 
-`--src` defaults to the designer's drop folder. Only the splash step needs it;
-the icon step reads the reference sheets already committed under
+`--splash` defaults to the AE render in the designer's drop folder. The icon
+step reads the reference sheets already committed under
 `Tools/onboarding_src/`.
 """
 
@@ -38,8 +42,10 @@ except ImportError:
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CAT = os.path.join(ROOT, "GyroQR", "Assets.xcassets")
 RES = os.path.join(ROOT, "GyroQR", "Onboarding", "Res")
-SRC_DEFAULT = os.path.expanduser(
-    "~/Desktop/Project - September/Nano/App Assets renders")
+SPLASH_DEFAULT = os.path.expanduser(
+    "~/Desktop/Project - September/Nano/Splash / Nano 2x 1Oct.mp4")
+INTRO_DEFAULT = os.path.expanduser(
+    "~/Desktop/Project - September/Nano/Nano Wallet / Skins Intro/Nano Wallet / Skins Intro.mov")
 SHEETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "onboarding_src")
 
 # Cells on the reference sheet, left to right, top row then bottom.
@@ -77,17 +83,17 @@ def imageset(name, src_path, vector=False, template=False):
         json.dump(entry, f, indent=2)
 
 
-def build_splash(src_dir):
-    webm = os.path.join(src_dir, "Splash Setup - Burst 2.webm")
-    if not os.path.exists(webm):
-        print(f"  skip splash: {webm} not found")
+def build_splash(src):
+    if not os.path.exists(src):
+        print(f"  skip splash: {src} not found")
         return
     os.makedirs(RES, exist_ok=True)
     mp4 = os.path.join(RES, "splash_burst.mp4")
     subprocess.run(
-        ["ffmpeg", "-y", "-loglevel", "error", "-i", webm,
-         "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p",
-         "-crf", "20", "-preset", "slow", "-an", "-movflags", "+faststart", mp4],
+        ["ffmpeg", "-y", "-loglevel", "error", "-i", src,
+         "-c:v", "libx265", "-crf", "22", "-preset", "slow", "-tag:v", "hvc1",
+         "-x265-params", "log-level=error", "-pix_fmt", "yuv420p",
+         "-an", "-movflags", "+faststart", mp4],
         check=True)
     print(f"  splash_burst.mp4  {os.path.getsize(mp4) // 1024} KB")
 
@@ -101,6 +107,24 @@ def build_splash(src_dir):
     os.remove(tmp)
     os.remove(hold)
     print("  splash_hold      (email-step backdrop)")
+
+
+def build_intro(src):
+    """The skins intro, with its alpha: HEVC-with-alpha (hvc1), which iOS
+    plays transparent on a bare AVPlayerLayer. ffmpeg cannot decode the alpha
+    layer back, so check it with AVFoundation, not ffprobe."""
+    if not os.path.exists(src):
+        print(f"  skip intro: {src} not found")
+        return
+    out = os.path.join(RES, "skins_intro.mov")
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-map", "0:v",
+         "-c:v", "hevc_videotoolbox", "-allow_sw", "1", "-alpha_quality", "0.75",
+         "-b:v", "2500k", "-tag:v", "hvc1", "-pix_fmt", "bgra",
+         "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
+         "-an", "-write_tmcd", "0", "-movflags", "+faststart", out],
+        check=True)
+    print(f"  skins_intro.mov  {os.path.getsize(out) // 1024} KB")
 
 
 def cut_icon(sheet_path, cell):
@@ -146,10 +170,13 @@ def build_icons():
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", default=SRC_DEFAULT, help="designer's export folder")
+    ap.add_argument("--splash", default=SPLASH_DEFAULT, help="splash clip to bundle")
+    ap.add_argument("--intro", default=INTRO_DEFAULT, help="skins intro (with alpha) to bundle")
     args = ap.parse_args()
 
     print("splash:")
-    build_splash(args.src)
+    build_splash(args.splash)
+    print("skins intro:")
+    build_intro(args.intro)
     print("interest icons:")
     build_icons()

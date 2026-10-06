@@ -1,27 +1,25 @@
 import SwiftUI
 
-/// The white sheet the wallet card drops into, Figma `Subtract` (915:61054) in
-/// `Frame 2147241934` (915:61051). A rectangle whose top edge carries a centred
-/// notch — the mouth of the wallet pocket.
+/// The white sheet the wallet card drops into, Figma `shape` (1027:18114):
+/// a rectangle whose flat top edge carries a centred notch, 20pt deep — the
+/// mouth of the wallet pocket.
 ///
-/// Traced from the exported SVG path, which lives in a 376pt-wide box. Two
-/// things about it that the previous shape did not have, and that the rest of
-/// the screen has to account for:
+/// Traced from the exported SVG path, which lives in a 377pt-wide box. The
+/// top edge is flat either side of the notch, so the crest — what
+/// `SkinSelectSpec.restTop` and friends measure from — is simply the top
+/// edge. Each shoulder is two short cubics either side of a straight run,
+/// the export's rounded 45° corner.
 ///
-///  * The top edge is **not flat**. It sits at y 11 at the far left and right
-///    and rises to 2.74 at the notch's outer shoulders, so the sheet has a
-///    gentle crown rather than a straight lip.
-///  * Everything here is therefore measured from the **crest** — the path's
-///    topmost point — which is what `SkinSelectSpec.restTop` and friends now
-///    refer to. The authored path is shifted up by its own 2.741 so the crest
-///    is y 0 and nothing is drawn above the frame.
+/// The previous shape (915:61054), with its crowned lip and 42pt notch, is
+/// still the wallet screen's cut — `WalletCutShape`.
 struct PocketShape: Shape {
     /// Design width the control points were authored against.
-    static let designWidth: CGFloat = 376
+    static let designWidth: CGFloat = 377
     /// Depth of the notch floor below the crest, at the design width.
-    static let notchDepth: CGFloat = 42.259
-    /// How far the far left and right of the top edge sit below the crest.
-    static let rimDrop: CGFloat = 8.259
+    static let notchDepth: CGFloat = 20
+    /// How far the far left and right of the top edge sit below the crest —
+    /// none, the edge is flat.
+    static let rimDrop: CGFloat = 0
 
     func path(in rect: CGRect) -> Path {
         var path = Self.edgePath(in: rect)
@@ -39,6 +37,71 @@ struct PocketShape: Shape {
     /// sees.
     static func edgePath(in rect: CGRect) -> Path {
         let k = rect.width / Self.designWidth      // uniform scale for x and y
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + x * k, y: rect.minY + y * k)
+        }
+        var path = Path()
+        path.move(to: p(0, 0))
+        path.addLine(to: p(26.5881, 0))
+        path.addCurve(to: p(39.3606, 1.222), control1: p(33.14, 0), control2: p(36.416, 0))
+        path.addCurve(to: p(49.2454, 9.403), control1: p(42.3052, 2.444), control2: p(44.6186, 4.764))
+        path.addLine(to: p(50.4371, 10.597))
+        path.addCurve(to: p(60.3219, 18.778), control1: p(55.0639, 15.236), control2: p(57.3773, 17.556))
+        path.addCurve(to: p(73.0945, 20), control1: p(63.2665, 20), control2: p(66.5425, 20))
+        path.addLine(to: p(303.905, 20))
+        path.addCurve(to: p(316.678, 18.778), control1: p(310.457, 20), control2: p(313.733, 20))
+        path.addCurve(to: p(326.563, 10.597), control1: p(319.623, 17.556), control2: p(321.936, 15.236))
+        path.addLine(to: p(327.755, 9.403))
+        path.addCurve(to: p(337.639, 1.222), control1: p(332.381, 4.764), control2: p(334.695, 2.444))
+        path.addCurve(to: p(350.412, 0), control1: p(340.584, 0), control2: p(343.86, 0))
+        path.addLine(to: p(377, 0))
+        return path
+    }
+
+    /// How far below the crest the notch floor sits, at a given width.
+    static func notchDepth(forWidth w: CGFloat) -> CGFloat {
+        notchDepth * (w / designWidth)
+    }
+
+    /// x-extent of the notch at the design width — the stretch of edge that
+    /// dips, and so the only part of the mouth a card can pass through. Read
+    /// off the path above: the shoulder leaves the top edge at 26.59 and
+    /// rejoins it at 350.41.
+    static let notchSpan: ClosedRange<CGFloat> = 26.5881...350.412
+
+    static func notchRange(forWidth w: CGFloat) -> ClosedRange<CGFloat> {
+        let k = w / designWidth
+        return (notchSpan.lowerBound * k)...(notchSpan.upperBound * k)
+    }
+
+    /// The four x values where the mouth's profile changes, at the design
+    /// width: the shoulder leaves the top edge at 26.59, reaches the notch
+    /// floor at 73.09, leaves the floor at 303.91 and rejoins the top edge at
+    /// 350.41.
+    ///
+    /// They are what lets the profile be evaluated without the path — which a
+    /// shader has to do, since it only ever sees one pixel at a time.
+    static let notchShoulders: (CGFloat, CGFloat, CGFloat, CGFloat) =
+        (26.5881, 73.0945, 303.905, 350.412)
+
+    /// `notchShoulders` at a given width.
+    static func notchShoulders(forWidth w: CGFloat) -> (CGFloat, CGFloat, CGFloat, CGFloat) {
+        let k = w / designWidth
+        let s = notchShoulders
+        return (s.0 * k, s.1 * k, s.2 * k, s.3 * k)
+    }
+}
+
+/// The wallet screen's white cut: the pocket's previous shape, Figma
+/// `Subtract` (915:61054), 376 wide, with a crowned lip — y 11 at the far
+/// left and right rising to a crest at the notch's outer shoulders — and a
+/// 42pt notch. Kept as it was so the wallet screen stays on its own design
+/// while the picker takes the new pocket.
+struct WalletCutShape: Shape {
+    static let designWidth: CGFloat = 376
+
+    func path(in rect: CGRect) -> Path {
+        let k = rect.width / Self.designWidth
         /// The authored path's own top inset, removed so the crest is y 0.
         let lift: CGFloat = 2.74118
         func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
@@ -57,40 +120,10 @@ struct PocketShape: Shape {
         path.addCurve(to: p(308.426, 2.74118),
                       control1: p(286.102, 11.1562), control2: p(296.507, 1.28438))
         path.addLine(to: p(376, 11.0002))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
         return path
-    }
-
-    /// How far below the crest the notch floor sits, at a given width.
-    static func notchDepth(forWidth w: CGFloat) -> CGFloat {
-        notchDepth * (w / designWidth)
-    }
-
-    /// x-extent of the notch at the design width — the stretch of edge that
-    /// dips, and so the only part of the mouth a card can pass through. Read
-    /// off the path above: the crown leaves the top edge at 67.57 and rejoins
-    /// it at 308.43.
-    static let notchSpan: ClosedRange<CGFloat> = 67.5736...308.426
-
-    static func notchRange(forWidth w: CGFloat) -> ClosedRange<CGFloat> {
-        let k = w / designWidth
-        return (notchSpan.lowerBound * k)...(notchSpan.upperBound * k)
-    }
-
-    /// The four x values where the mouth's profile changes, at the design
-    /// width: the crown leaves the top edge at 67.57, reaches the notch floor
-    /// at 136, leaves the floor at 240 and rejoins the top edge at 308.43.
-    ///
-    /// The path itself is four cubics; these are the joints between them, and
-    /// they are what lets the profile be evaluated without the path — which a
-    /// shader has to do, since it only ever sees one pixel at a time.
-    static let notchShoulders: (CGFloat, CGFloat, CGFloat, CGFloat) =
-        (67.5736, 136, 240, 308.426)
-
-    /// `notchShoulders` at a given width.
-    static func notchShoulders(forWidth w: CGFloat) -> (CGFloat, CGFloat, CGFloat, CGFloat) {
-        let k = w / designWidth
-        let s = notchShoulders
-        return (s.0 * k, s.1 * k, s.2 * k, s.3 * k)
     }
 }
 

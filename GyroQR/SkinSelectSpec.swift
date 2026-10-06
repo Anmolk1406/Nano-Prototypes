@@ -55,9 +55,9 @@ enum SkinSelectSpec {
 
     // The pocket sheet. `restTop` keeps it just off the bottom; `settledTop`
     // is Figma 794:29872 (y = 242).
-    /// 376, the new shape's own width — near enough the 375 stage that the
-    /// sheet no longer overhangs it by any useful amount. It was 385.342.
-    static let sheetWidth: CGFloat = 376
+    /// 377, the pocket shape's own width (1027:18114) — near enough the 375
+    /// stage that the sheet barely overhangs it.
+    static let sheetWidth: CGFloat = 377
     static let restTop: CGFloat = 830
     static let settledTop: CGFloat = 242
     /// How far the sheet's top edge travels while the user is still dragging.
@@ -80,6 +80,16 @@ enum SkinSelectSpec {
     static let cycleThreshold: CGFloat = 150
     /// Fraction of a span that commits on release. Below it the card falls back.
     static let commitFraction: CGFloat = 0.78
+    /// Upward drag on the settled card that takes it back out of the pocket.
+    /// Short, like the throw: going back is an undo, not a decision.
+    static let liftThreshold: CGFloat = 140
+    /// Fraction of the lift that commits on release.
+    static let liftCommit: CGFloat = 0.55
+    /// How far the sheet sinks over a full lift, so the card reads as being
+    /// drawn up out of it rather than slid over it.
+    static let liftSheetSink: CGFloat = 90
+    /// The back button, left of the step dots and on their centre line.
+    static let backButton = CGRect(x: 16, y: 64, width: 40, height: 40)
 
     // Exit for the cards left behind when one is pulled into the pocket.
     //
@@ -155,9 +165,8 @@ enum SkinSelectSpec {
         static let dropInk    = Color(red: 0x00/255, green: 0x6B/255, blue: 0x3B/255)
     }
 
-    // The dashed drop target on the sheet — `Rectangle 1891598615`: fill 006B3B
-    // at 10%, stroke 006B3B at 100%, 2.5pt centred, dashed 9 on 9 with a round
-    // dash cap.
+    // The drop target on the sheet — now the grid tray, Figma `Grid`
+    // (1118:44289), drawn by `SkinDropGrid`.
     //
     // Positioned relative to the *sheet*, not the screen, so it rides up with
     // the pocket as you drag and needs no animation of its own.
@@ -223,9 +232,6 @@ enum SkinSelectSpec {
     /// travel — quick, but not instant.
     static let mouthFadeIn: Double = 0.25
 
-    static let dropDash: CGFloat = 9
-    /// 1pt, per the designer's stroke panel. It was 2.5.
-    static let dropStrokeWidth: CGFloat = 1
 
     /// Scale that seats the card in the outline. The two are the same
     /// footprint, so this is just the ratio of the widths — and because only

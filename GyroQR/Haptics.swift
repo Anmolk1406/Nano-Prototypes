@@ -16,9 +16,9 @@ final class Haptics: ObservableObject {
     /// Seconds between pulses while the card is being pulled down.
     @Published var pulseGap: Double = 0.06 { didSet { if ramping { schedule() } } }
     /// Impact strength at the very start of the pull.
-    @Published var minStrength: Double = 0.18
+    @Published var minStrength: Double = 0.44
     /// Impact strength once the card reaches the settle threshold.
-    @Published var maxStrength: Double = 1.0
+    @Published var maxStrength: Double = 0.90
     /// Shapes how late the ramp bites. 1 = linear, >1 = back-loaded.
     @Published var rampCurve: Double = 1.4
 
@@ -26,6 +26,7 @@ final class Haptics: ObservableObject {
     private let medium = UIImpactFeedbackGenerator(style: .medium)
     private let heavy  = UIImpactFeedbackGenerator(style: .heavy)
     private let rigid  = UIImpactFeedbackGenerator(style: .rigid)
+    private let soft   = UIImpactFeedbackGenerator(style: .soft)
     private let notify = UINotificationFeedbackGenerator()
 
     private var timer: Timer?
@@ -36,7 +37,7 @@ final class Haptics: ObservableObject {
 
     func prepare() {
         guard isEnabled else { return }
-        light.prepare(); medium.prepare(); heavy.prepare(); rigid.prepare(); notify.prepare()
+        light.prepare(); medium.prepare(); heavy.prepare(); rigid.prepare(); soft.prepare(); notify.prepare()
     }
 
     // MARK: discrete
@@ -63,6 +64,13 @@ final class Haptics: ObservableObject {
     func detent(progress p: Double) {
         guard isEnabled else { return }
         light.impactOccurred(intensity: CGFloat(0.25 + 0.55 * max(0, min(1, p))))
+    }
+
+    /// A field taking focus, or a checkbox or radio being ticked: a light,
+    /// crisp tap — present under the finger, never a click.
+    func lightTap() {
+        guard isEnabled else { return }
+        light.impactOccurred(intensity: 0.6)
     }
 
     func selectionTick() {

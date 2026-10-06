@@ -54,7 +54,7 @@ final class MotionEngine: ObservableObject {
     /// you are holding it as the new level. Gyro only — drag already springs
     /// back on release, and demo is meant to keep moving.
     @Published var autoRecenter = true
-    @Published var idleDelay: Double = 1.5
+    @Published var idleDelay: Double = 0.3
 
     private let manager = CMMotionManager()
     private var reference: CMAttitude?

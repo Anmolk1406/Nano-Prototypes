@@ -1,0 +1,6 @@
+ok   read layout
+ok   clear previous build
+ok   folder + footage
+ok   GESTURE_DOWN
+ok   GESTURE_UP
+done

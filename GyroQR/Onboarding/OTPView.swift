@@ -2,7 +2,8 @@ import SwiftUI
 
 /// Step 3 — `Check your mail` (845:48967 and its sibling states).
 ///
-/// The illustration is the designer's dotLottie (`mail_otp_intro.lottie`); the
+/// The illustration is the designer's dotLottie (`otp_email_pop.lottie`, from
+/// `Email-Pop .lottie`, 480 × 280 at 60fps, 2.5s); the
 /// four boxes, the keypad hand-off and the toast are built here.
 struct OTPView: View {
     @ObservedObject var tune: OnboardingTuning
@@ -42,14 +43,16 @@ struct OTPView: View {
     /// Small enough that the Resend row clears the number pad by ~27pt.
     private let artCompactWidth: CGFloat = 290
     /// Fraction of the clip's own width that the artwork occupies vertically.
-    /// The 600 × 400 canvas carries empty air above and below the burst; this
-    /// is the band that is left once that is cropped away.
-    private let artBandRatio: CGFloat = 134.0 / 290.0
+    /// The 480 × 280 canvas draws the art from y 4 to 222 — high in the
+    /// canvas, with empty air under it; this is that band plus 4pt each side.
+    private let artBandRatio: CGFloat = 226.0 / 480.0
+    /// How far the band's centre sits above the canvas centre: 113 vs 140.
+    private let artBandLift: CGFloat = 27.0 / 480.0
 
     private var compact: Bool { keyboard > 0 }
     private var artWidth: CGFloat { compact ? artCompactWidth : artRelaxedWidth }
     private var artHeight: CGFloat { artWidth * artBandRatio }
-    private var artCanvasHeight: CGFloat { artWidth * 400 / 600 }
+    private var artCanvasHeight: CGFloat { artWidth * 280 / 480 }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -168,8 +171,9 @@ struct OTPView: View {
                 Color.clear
                     .frame(width: 269, height: artHeight)
                     .overlay {
-                        LottieHost(name: "mail_otp_intro", loop: .playOnce)
+                        LottieHost(name: "otp_email_pop", loop: .playOnce)
                             .frame(width: artWidth, height: artCanvasHeight)
+                            .offset(y: artWidth * artBandLift)
                             // Crop the canvas' empty air vertically only. The
                             // relaxed width is wider than the screen on
                             // purpose — the design bleeds the burst off both

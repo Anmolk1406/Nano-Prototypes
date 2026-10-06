@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>InviteQR Motion Spec</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  /* One dark theme, neutral greys with no blue cast. */
+  color-scheme:dark;
+  --paper:#0E0E0F; --surface:#171718; --ink:#EDEDEE; --ink-2:#B4B4B8; --ink-3:#86868C;
+  --line:#2A2A2D; --accent:#B28CFF; --accent-soft:#2A2233; --gyro:#5ED3A8; --gyro-soft:#15291F;
+  --haptic:#F0915F; --haptic-soft:#33201A; --verify:#F2C552; --verify-soft:#322A12;
+  --code-bg:#1F1F21;
+  --sans:"Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;padding-inline:20px;padding-block:0 72px}
+.wrap{max-width:1040px;margin:0 auto}
+header.top{padding-block:44px 28px;border-bottom:1px solid var(--line);display:grid;gap:14px}
+.eyebrow{font:600 11.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:clamp(30px,5vw,44px);line-height:1.08;font-weight:800;letter-spacing:-.02em;margin:0;text-wrap:balance}
+.lede{max-width:68ch;color:var(--ink-2);margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:8px 20px;font:500 12.5px/1.4 var(--mono);color:var(--ink-3)}
+.meta b{color:var(--ink-2);font-weight:600}
+nav.toc{display:flex;flex-wrap:wrap;gap:6px;padding-block:18px;border-bottom:1px solid var(--line)}
+nav.toc a{font:500 12.5px/1 var(--sans);color:var(--ink-2);text-decoration:none;padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+nav.toc a:hover,nav.toc a:focus-visible{border-color:var(--accent);color:var(--accent);outline:none}
+section{padding-block:40px 8px;display:grid;gap:16px}
+h2{font-size:24px;line-height:1.2;font-weight:750;letter-spacing:-.01em;margin:0;text-wrap:balance;display:flex;align-items:baseline;gap:12px}
+h2 .n{font:600 12px/1 var(--mono);color:var(--ink-3);letter-spacing:.06em}
+h3{font-size:16px;font-weight:700;margin:14px 0 0}
+p{margin:0;max-width:72ch}
+.muted{color:var(--ink-2)}
+.tag{display:inline-block;font:600 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:4px 7px;border-radius:5px;vertical-align:2px}
+.tag.gyro{background:var(--gyro-soft);color:var(--gyro)}
+.tag.haptic{background:var(--haptic-soft);color:var(--haptic)}
+.tag.verify{background:var(--verify-soft);color:var(--verify)}
+.tag.static{background:var(--code-bg);color:var(--ink-3)}
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 11px/1.3 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);background:var(--paper);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.num,td code,.mono{font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums}
+td.num{white-space:nowrap}
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:1px 5px;border-radius:4px}
+pre{margin:0;background:var(--code-bg);border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow-x:auto;font:12.5px/1.6 var(--mono);color:var(--ink)}
+pre code{background:none;padding:0;font-size:inherit}
+.note{border-left:3px solid var(--verify);background:var(--verify-soft);padding:12px 14px;border-radius:0 8px 8px 0;max-width:80ch}
+.note.gyro{border-color:var(--gyro);background:var(--gyro-soft)}
+.note.haptic{border-color:var(--haptic);background:var(--haptic-soft)}
+.note strong{font-weight:700}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;display:grid;gap:12px;align-content:start}
+.panel h3{margin:0}
+.formula{font:500 13.5px/1.7 var(--mono);background:var(--code-bg);border-radius:8px;padding:10px 12px;overflow-x:auto;white-space:nowrap}
+ol.steps{margin:0;padding-left:22px;display:grid;gap:6px;max-width:78ch}
+ul.plain{margin:0;padding-left:20px;display:grid;gap:6px;max-width:78ch}
+/* calculator */
+.calc{display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:18px;align-items:start}
+@media (max-width:760px){.calc{grid-template-columns:1fr}}
+.pad{position:relative;aspect-ratio:1;max-width:100%;background:var(--surface);border:1px solid var(--line);border-radius:14px;touch-action:none;cursor:crosshair;overflow:hidden}
+.pad::before,.pad::after{content:"";position:absolute;background:var(--line)}
+.pad::before{left:50%;top:8%;bottom:8%;width:1px}
+.pad::after{top:50%;left:8%;right:8%;height:1px}
+.pad .ring{position:absolute;inset:8%;border:1px dashed var(--line);border-radius:50%}
+.pad .dot{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 6px color-mix(in srgb,var(--accent) 22%,transparent)}
+.pad .lab{position:absolute;font:500 10.5px/1 var(--mono);color:var(--ink-3)}
+.sliders{display:grid;gap:10px;margin-top:12px}
+.sliders label{display:grid;grid-template-columns:70px 1fr 58px;gap:10px;align-items:center;font:500 12.5px/1 var(--mono);color:var(--ink-2)}
+.sliders input{width:100%;accent-color:var(--accent)}
+.sliders output{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink)}
+.btn{font:600 12.5px/1 var(--sans);padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);cursor:pointer}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.card-preview{perspective:900px;display:grid;place-items:center;padding:18px 0 4px}
+.card-preview .c{width:120px;aspect-ratio:290/409.19;border-radius:18px;background:linear-gradient(145deg,#c9b6ff,#8fd7f0 45%,#f3b4e6);box-shadow:0 10px 30px rgba(20,10,60,.25);position:relative;transform-style:preserve-3d}
+.card-preview .c i{position:absolute;inset:14% 13% 30%;border-radius:10px;background:#3b1f9e;transform:translateZ(0)}
+
+.flow{display:grid;gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+.flow-row,.flow-fan{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.node{display:grid;gap:2px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:var(--paper);font:600 12.5px/1.25 var(--sans);color:var(--ink)}
+.node small{font:500 11px/1.3 var(--mono);color:var(--ink-3)}
+.node.key{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);font-family:var(--mono)}
+.node.out{border-color:color-mix(in srgb,var(--gyro) 45%,var(--line))}
+.arr{color:var(--ink-3);font:500 14px/1 var(--mono)}
+.fan-label{font:600 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-right:4px}
+.print-only{display:none}
+@page{size:A4;margin:14mm 12mm}
+@media print{
+  html,body{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:var(--paper)}
+  body{padding-inline:0;font-size:12.5px}
+  nav.toc,.sliders,.pad,.card-preview,.screen-only{display:none!important}
+  .print-only{display:block}
+  .calc{grid-template-columns:1fr}
+  section{break-inside:auto;padding-block:22px 4px}
+  h2,h3{break-after:avoid}
+  tr,.panel,.note,pre,.flow,.formula{break-inside:avoid}
+  .table-wrap,pre{overflow:visible}
+  pre{white-space:pre-wrap;word-break:break-word}
+  a{color:inherit;text-decoration:none}
+}
+footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font:500 12px/1.6 var(--mono);color:var(--ink-3)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow">noon nano · Parent onboarding · final screen</div>
+  <h1>InviteQR motion &amp; haptics spec</h1>
+  <p class="lede">Everything that moves on the Invite share screen, how each value is derived from the phone's tilt, and every haptic on the screen. Numbers are the shipped defaults of the iOS prototype (SwiftUI), with React Native notes for each part.</p>
+  <div class="meta">
+    <span><b>Figma</b> 980:15528 · 1 Child details</span>
+    <span><b>Artboard</b> 375 × 812 pt</span>
+    <span><b>Source</b> GyroQR/ShareScreen.swift · GyroCardView.swift · MotionEngine.swift · CardSpec.swift · Tuning.swift · SlabDome.swift</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Sections">
+  <a href="#pipeline">Pipeline</a><a href="#input">Gyro input</a><a href="#stack">Layer stack</a><a href="#card">Card transform</a>
+  <a href="#layers">Layers &amp; parallax</a><a href="#light">Light</a><a href="#shadow">Shadows</a>
+  <a href="#sparkles">Sparkles</a><a href="#haptics">Haptics</a><a href="#calc">Calculator</a>
+  <a href="#rn">React Native notes</a><a href="#tuning">Tuning ranges</a><a href="#qa">QA checklist</a>
+</nav>
+
+<section id="pipeline">
+  <h2><span class="n">01</span>Pipeline</h2>
+  <p>One normalised tilt vector drives everything. The sensor pipeline produces <code>tilt = (x, y)</code>, both axes in <code>−1…1</code>. Both axes are then inverted, and every visual reads <code>t = (−tilt.x, −tilt.y)</code>, so the card leans <em>against</em> the phone's tilt. It is computed once per frame and read by every layer. Nothing on this screen animates on a timer: with the phone still, the card settles flat and stays there.</p>
+<div class="flow" role="img" aria-label="Pipeline: device attitude to relative pose to divide by 30 degrees to idle recentre to smoothing to invert, producing t, which drives the card turn, layer parallax, light bands, card shadow and page sparkles.">
+  <div class="flow-row">
+    <div class="node">Device attitude<small>roll, pitch · 120 Hz</small></div><span class="arr">→</span>
+    <div class="node">Relative pose<small>× reference⁻¹</small></div><span class="arr">→</span>
+    <div class="node">Normalise<small>÷ 30°, clamp ±1</small></div><span class="arr">→</span>
+    <div class="node">Idle recentre<small>bias, 0.3 s delay</small></div><span class="arr">→</span>
+    <div class="node">Smoothing<small>0.14 @ 60 Hz</small></div><span class="arr">→</span>
+    <div class="node">Invert X, Y<small>t = −tilt</small></div><span class="arr">→</span>
+    <div class="node key">t (x, y)</div>
+  </div>
+  <div class="flow-fan">
+    <span class="fan-label">t drives</span>
+    <div class="node out">Card 3D turn + roll<small>§04</small></div>
+    <div class="node out">Layer parallax, wobble, depth scale<small>§05</small></div>
+    <div class="node out">Sheen + iridescence<small>§06</small></div>
+    <div class="node out">Card shadow<small>§07</small></div>
+    <div class="node out">Page sparkles<small>§08</small></div>
+  </div>
+</div>
+  <p class="muted">Screen layout: the 375 × 812 artboard is scaled to <em>cover</em> the device, <code>scale = max(W/375, H/812)</code>, and centred. All numbers below are artboard points.</p>
+</section>
+
+<section id="input">
+  <h2><span class="n">02</span>Gyro input <span class="tag gyro">gyro</span></h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Constant</th><th>Value</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>Sensor rate</td><td class="num">120 Hz (8.3 ms)</td><td>Device-motion attitude updates. The per-frame step runs on the display link.</td></tr>
+      <tr><td>Reference frame</td><td class="num">xArbitraryZVertical</td><td>iOS CoreMotion frame. The first attitude after start is stored as the reference, and every reading is taken relative to it (<code>attitude × reference⁻¹</code>).</td></tr>
+      <tr><td><code>tilt.x</code> source</td><td class="num">roll</td><td>Rotation about the device's long axis: tipping the left or right edge toward you.</td></tr>
+      <tr><td><code>tilt.y</code> source</td><td class="num">pitch</td><td>Rotation about the device's short axis: tipping the top edge toward or away from you.</td></tr>
+      <tr><td>Range</td><td class="num">30°</td><td>Physical tilt that maps to a full ±1. <code>x = clamp(roll° / 30)</code>, same for y.</td></tr>
+      <tr><td>Smoothing</td><td class="num">0.14 @ 60 Hz</td><td>Exponential low-pass, frame-rate independent (formula below).</td></tr>
+      <tr><td>Auto-recentre</td><td class="num">on</td><td>Hold the phone still and the card eases back to flat, treating the new pose as level.</td></tr>
+      <tr><td>Still threshold</td><td class="num">0.35 units/s</td><td>Speed of the raw sample (in tilt units) below which the phone counts as still.</td></tr>
+      <tr><td>Idle delay</td><td class="num">0.3 s</td><td>Stillness needed before recentring starts.</td></tr>
+      <tr><td>Recentre half-life</td><td class="num">0.45 s</td><td>Time for the bias to close half the remaining gap.</td></tr>
+      <tr><td>Invert X / Y</td><td class="num">on / on</td><td>Every visual reads <code>t = (−tilt.x, −tilt.y)</code>, so the card leans <em>against</em> the device. The card rotation, parallax, light, shadow and sparkles all use the inverted value.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h3>Per frame, in order</h3>
+<pre><code>// dt = seconds since last frame, capped at 0.1
+rel    = attitude relative to reference
+sample = { x: clamp(rel.roll°  / 30),
+           y: clamp(rel.pitch° / 30) }
+
+speed  = |sample − lastSample| / dt
+idle   = speed &lt; 0.35 ? idle + dt : 0
+if (idle ≥ 0.3) {
+  k    = 1 − 0.5^(dt / 0.45)
+  bias += (sample − bias) · k
+}
+raw    = clamp(sample − bias)
+
+a      = 1 − (1 − 0.14)^(dt · 60)
+tilt  += (raw − tilt) · a
+
+t      = { x: −tilt.x, y: −tilt.y }  // invert X and Y
+// every formula from §04 on reads t</code></pre>
+    </div>
+    <div class="panel">
+      <h3>Fallbacks</h3>
+      <ul class="plain">
+        <li><strong>No gyro</strong> (simulator, some Android devices): a demo sweep, <code>phase += dt·0.55</code>, <code>raw = (sin φ, 0.8·cos 0.73φ)</code>. The two frequencies are incommensurate, so the sweep never visibly repeats.</li>
+        <li><strong>Touch drag</strong> on the card: <code>raw = (dx / 140, −dy / 140)</code>, clamped ±1. On release <code>raw = 0</code> and the smoothing carries the card back to flat.</li>
+        <li><strong>Reference pose:</strong> captured the first time the sensor starts, and kept across later starts. The prototype also has a manual Recenter in its test panel, which takes the current attitude as the new reference and resets the bias to 0. For RN, capture the reference each time the screen gains focus, so the card always opens flat however the phone is held.</li>
+      </ul>
+      <div class="note gyro"><strong>Start and stop:</strong> the sensor and the frame loop run only while this screen is visible. Start them on focus and stop them on blur.</div>
+    </div>
+  </div>
+</section>
+
+<section id="stack">
+  <h2><span class="n">03</span>Layer stack</h2>
+  <p>How the screen and the card are put together, back to front. Each row is one layer. <strong>Moves</strong> says what the tilt does to it. <strong>Blend</strong>, <strong>Clip</strong> and <strong>Mask</strong> say how it combines with what is under it. Build it in exactly this order: the light only looks right because it lands on the finished card underneath it.</p>
+
+  <h3>Screen (375 × 812 artboard)</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>z</th><th>Layer</th><th>Asset / content</th><th>Frame (x, y, w, h)</th><th>Moves</th><th>Blend</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td>Background</td><td><code>inv_bg</code></td><td class="num">0, 0, 375, 812</td><td><span class="tag static">static</span></td><td>normal</td></tr>
+      <tr><td class="num">2</td><td>Title and subtitle</td><td>"Invite Kiaan", H40 ExtraBold with gradient and white 4.8 pt outline · B14 Medium subtitle</td><td class="num">57, 112.31, 261, 48 · 32, 162.31, 311.28, 20</td><td><span class="tag static">static</span></td><td>normal</td></tr>
+      <tr><td class="num">3</td><td>Left sparkle</td><td><code>inv_star_l</code></td><td class="num">−19.85, 459.20, 85, 89</td><td><span class="tag gyro">gyro</span> drift, §08</td><td>normal</td></tr>
+      <tr><td class="num">4</td><td><strong>Card</strong> (the stack below, as one unit)</td><td>—</td><td class="num">42.17, 196.57, 290, 409.19</td><td><span class="tag gyro">gyro</span> 3D turn and roll, §04</td><td>normal, with drop shadow</td></tr>
+      <tr><td class="num">5</td><td>Right sparkle</td><td><code>inv_star_r</code></td><td class="num">250.67, 256.79, 153, 182.33</td><td><span class="tag gyro">gyro</span> drift, §08</td><td>normal</td></tr>
+      <tr><td class="num">6</td><td>Close button</td><td>40 pt circle, white 50% fill, white 64% 1 pt ring, <code>ic_close</code> 20 pt</td><td class="num">12, 55, 40, 40</td><td><span class="tag static">static</span></td><td>normal</td></tr>
+      <tr><td class="num">7</td><td>Bottom block</td><td>OR row, link field (<code>ic_copy</code>), Share invite button (<code>ic_share</code>) and home bar. Only the button row and home bar are filled white.</td><td class="num">0, 590, 375, 222</td><td><span class="tag static">static</span></td><td>normal</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Card, inside z 4</h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th>z</th><th>Layer</th><th>Asset / content</th><th>Moves</th><th>Blend</th><th>Clip &amp; mask</th></tr></thead>
+    <tbody>
+      <tr><td class="num">4.1</td><td>Frame (chrome card)</td><td><code>inv_frame</code></td><td>turns with card only</td><td>normal</td><td rowspan="6">Everything from 4.1 to 4.6 is one group, clipped to the card box (290 × 409.19, no corner radius), then masked by the alpha of <code>inv_card_mask</code>, the chrome's own silhouette. Nothing inside can paint outside the chrome's outline.</td></tr>
+      <tr><td class="num">4.2</td><td>Panel (recessed)</td><td><code>inv_panel</code></td><td><span class="tag gyro">gyro</span> parallax h −3, depth scale</td><td>normal</td></tr>
+      <tr><td class="num">4.3</td><td>QR and nano badge</td><td><code>inv_qr</code> with contact shadow</td><td><span class="tag gyro">gyro</span> parallax h +7, wobble, depth scale, shadow offset</td><td>normal</td></tr>
+      <tr><td class="num">4.4</td><td>Name</td><td>live text "Kiaan Khalid"</td><td><span class="tag gyro">gyro</span> parallax h +3, wobble</td><td>normal</td></tr>
+      <tr><td class="num">4.5</td><td>Specular sheen</td><td>white gradient band, 1181.5 pt square</td><td><span class="tag gyro">gyro</span> slides −t × 260, opacity with |t|</td><td><strong>additive</strong> (plusLighter)</td></tr>
+      <tr><td class="num">4.6</td><td>Iridescence</td><td>rainbow gradient band, 1181.5 pt square</td><td><span class="tag gyro">gyro</span> slides +t × 300, opacity with |t|</td><td><strong>additive</strong> (plusLighter)</td></tr>
+    </tbody>
+  </table></div>
+
+  <ul class="plain">
+    <li><strong>Sheen and iridescence sit on top of every card layer</strong>, the QR and the name included, with the iridescence above the sheen. Both add light to the finished card beneath them. Blending them against anything else, such as one layer or an empty canvas, gives the wrong colour.</li>
+    <li><strong>Clip before mask.</strong> The bands are far larger than the card. Clip them to the card box first, then apply <code>inv_card_mask</code>, so the chrome's rounded corners and outer glow shape the light. Without the mask, a pale rectangle shows where the box extends past the rounded chrome.</li>
+    <li><strong>Composite, then shadow, then transform.</strong> Flatten 4.1–4.6 into one image, cast the card's drop shadow (§07) from that image, and only then apply the roll, pitch and yaw (§04). If the layers are turned separately, their clips can drift apart under perspective and light can leak past the card's edge.</li>
+    <li><strong>No rim light or halo</strong> on this card. The chrome artwork carries its own edge and glow.</li>
+  </ul>
+
+<pre><code>// React Native Skia: card group, back to front
+&lt;Canvas style={{ width: 290, height: 409.19 }}&gt;       // wrapper gets the 3D transform + shadow
+  &lt;Group clip={rect(0, 0, 290, 409.19)}
+         layer={&lt;Paint&gt;&lt;/Paint&gt;}&gt;                   // offscreen group, flattened before the transform
+    &lt;Mask mode="alpha" mask={&lt;Image image={cardMask} fit="fill" width={290} height={409.19} /&gt;}&gt;
+      &lt;Image image={frame} x={0} y={0} width={290} height={409.19} /&gt;
+      &lt;Image image={panel} x={39.33 + px(-3)} y={42.19 + py(-3)} width={212} height={244} /&gt;
+      &lt;Image image={qr}    x={61.50 + px(7)}  y={77.43 + py(7)}  width={172} height={173} /&gt;  // + wobble, shadow
+      &lt;Text  ... name at 20.53 + px(3), 305.13 + py(3) /&gt;
+      &lt;Rect ... sheen band  blendMode="plus" opacity={sheenOpacity} /&gt;
+      &lt;Rect ... holo band   blendMode="plus" opacity={holoOpacity} /&gt;
+    &lt;/Mask&gt;
+  &lt;/Group&gt;
+&lt;/Canvas&gt;</code></pre>
+</section>
+
+<section id="card">
+  <h2><span class="n">04</span>Card transform <span class="tag gyro">gyro</span></h2>
+  <p>The card is 290 × 409.19 pt, placed at (42.17, 196.57) on the artboard. The whole card, with its layers and light already composited, is transformed as one unit. Transforms are listed innermost first, which is the order they apply to the card.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>#</th><th>Transform</th><th>Formula</th><th>At full tilt (1, 1)</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td>Composite and drop shadow</td><td class="mono">see §07</td><td class="num">—</td></tr>
+      <tr><td class="num">2</td><td>In-plane roll (rotateZ)</td><td class="mono">tilt.x × 2.2°</td><td class="num">2.2°</td></tr>
+      <tr><td class="num">3</td><td>Pitch (rotateX)</td><td class="mono">tilt.y × 19°</td><td class="num">19°</td></tr>
+      <tr><td class="num">4</td><td>Yaw (rotateY)</td><td class="mono">tilt.x × 19°</td><td class="num">19°</td></tr>
+      <tr><td class="num">5</td><td>Perspective</td><td class="mono">SwiftUI 0.85 ≈ RN <code>perspective: 481</code></td><td class="num">—</td></tr>
+      <tr><td class="num">6</td><td>Scale</td><td class="mono">1.0</td><td class="num">1.0</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note"><span class="tag verify">verify</span> <strong>Perspective</strong> is derived, not measured. SwiftUI's <code>rotation3DEffect</code> sets <code>m34 = −p / max(w, h)</code>, so p = 0.85 on a 409 pt card gives a camera distance of about 409 / 0.85 ≈ 481 pt. Put the RN build next to the iOS prototype at full tilt and adjust it by eye. <strong>Signs:</strong> rotateX and rotateY conventions differ between SwiftUI and RN. With both axes inverted, tipping the phone's right edge away brings the card's right edge <em>toward</em> the viewer, and tipping its top edge away brings the card's top edge toward the viewer. Calibrate the RN build to that, against the iOS prototype.</div>
+  <p>In every formula from here on, <code>tilt.x</code> and <code>tilt.y</code> mean the inverted value <code>t</code> from §02. <code>tiltMagnitude = min(1, √(x² + y²))</code> is used by the depth scale, the sheen, the iridescence and the shadow radius, and is the same either way.</p>
+</section>
+
+<section id="layers">
+  <h2><span class="n">05</span>Layers &amp; parallax <span class="tag gyro">gyro</span></h2>
+  <p>Depth model: a layer <code>h</code> pt above the card's surface is shifted by <code>h · tan θ</code> before the card rotates. That one relationship makes the QR read as floating over its card. The recessed panel has a negative <code>h</code>, so it drifts against the tilt.</p>
+  <div class="formula">offset.x = h · tan(tilt.x · 19°) &nbsp;&nbsp;·&nbsp;&nbsp; offset.y = −h · tan(tilt.y · 19°) &nbsp;&nbsp;·&nbsp;&nbsp; tan 19° = 0.3443</div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Layer</th><th>Asset</th><th>Frame in card (x, y, w, h)</th><th>Elevation h</th><th>Parallax at full tilt</th><th>Wobble</th><th>Depth scale</th><th>Contact shadow</th></tr></thead>
+    <tbody>
+      <tr><td>Frame (chrome card)</td><td><code>inv_frame</code></td><td class="num">0, 0, 290, 409.19</td><td class="num">0</td><td class="num">0</td><td class="num">—</td><td class="num">1</td><td>—</td></tr>
+      <tr><td>Panel (recessed)</td><td><code>inv_panel</code></td><td class="num">39.33, 42.19, 212, 244</td><td class="num">−3 pt</td><td class="num">∓1.03 pt</td><td class="num">—</td><td class="num">1 − 0.005·|t|</td><td>—</td></tr>
+      <tr><td>QR and nano badge</td><td><code>inv_qr</code></td><td class="num">61.50, 77.43, 172, 173</td><td class="num">+7 pt</td><td class="num">±2.41 pt</td><td class="num">tilt.x × 1.0°</td><td class="num">1 + 0.0117·|t|</td><td class="mono">black 12%, blur 6, rest y +2, offset −0.75 × parallax</td></tr>
+      <tr><td>Name "Kiaan Khalid"</td><td>live text, H28 Bold, gradient #000 → #4C17A0 from 15.4%</td><td class="num">20.53, 305.13, 246.6, 36</td><td class="num">+3 pt</td><td class="num">±1.03 pt</td><td class="num">tilt.x × 0.5°</td><td class="num">—</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+  <ul class="plain">
+    <li><strong>Wobble</strong> is an extra in-plane rotation of that one layer: <code>tilt.x × 5° × layer.wobble</code> (0.2 for the QR, 0.1 for the name).</li>
+    <li><strong>Depth scale:</strong> nearer planes grow slightly as the card turns, <code>1 + (h / 600) · tiltMagnitude</code>. It applies to image layers only, not the name.</li>
+    <li><strong>Contact shadow</strong> (QR only): <code>x = −0.75 · offset.x</code>, <code>y = 2 − 0.75 · offset.y</code>. It stays opposite the float, so the QR looks lit from the front.</li>
+    <li><strong>Clipping:</strong> the frame, panel, QR, name and light bands are clipped to the card box, then masked by <code>inv_card_mask</code>'s alpha (the chrome's own silhouette).</li>
+  </ul>
+</section>
+
+<section id="light">
+  <h2><span class="n">06</span>Light <span class="tag gyro">gyro</span></h2>
+  <p>Two gradient bands slide across the face, both drawn with an additive blend (iOS <code>plusLighter</code>, Skia <code>BlendMode.Plus</code>). Each is a square of side <code>diag(card) + 2 × 300 + 80 = 1181.5 pt</code>, larger than the card so its straight edges never slide into view. Both are clipped to the card and <code>inv_card_mask</code>.</p>
+  <div class="grid2">
+    <div class="panel">
+      <h3>Specular sheen</h3>
+      <div class="table-wrap"><table><tbody>
+        <tr><td>Direction</td><td class="mono">top-left → bottom-right (45°)</td></tr>
+        <tr><td>Stops (white α @ %)</td><td class="mono">0 @40.7 · .22 @48.1 · .45 @50 · .22 @51.9 · 0 @59.3</td></tr>
+        <tr><td>Offset</td><td class="mono">(−tilt.x × 260, −tilt.y × 260)</td></tr>
+        <tr><td>Opacity</td><td class="mono">0.38 × (0.25 + 0.75 · |t|)</td></tr>
+        <tr><td>At rest</td><td class="mono">visible at 0.095</td></tr>
+      </tbody></table></div>
+    </div>
+    <div class="panel">
+      <h3>Iridescence (holo band)</h3>
+      <div class="table-wrap"><table><tbody>
+        <tr><td>Direction</td><td class="mono">top-left → bottom-right (45°)</td></tr>
+        <tr><td>Stops (HSB, s .85, b 1)</td><td class="mono">clear →41.5 · h0 @45 · h.13 @47.9 · h.33 @50 · h.52 @52.1 · h.72 @55 · h.88 @57.8 · clear @61.3→</td></tr>
+        <tr><td>Offset</td><td class="mono">(+tilt.x × 300, +tilt.y × 300), the opposite way to the sheen</td></tr>
+        <tr><td>Opacity</td><td class="mono">0.16 × |t|</td></tr>
+        <tr><td>At rest</td><td class="mono">hidden (0), so the resting card matches Figma</td></tr>
+      </tbody></table></div>
+    </div>
+  </div>
+  <div class="note"><strong>Rim light:</strong> the prototype also has a rim highlight that sweeps along a card's border. It follows the tilt, but it is drawn on the card's stroke, and this card's border width is 0 (the chrome frame carries its own edge). So on the Invite card it draws nothing. Don't implement it for this screen.</div>
+</section>
+
+<section id="shadow">
+  <h2><span class="n">07</span>Card shadow <span class="tag gyro">gyro</span></h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Property</th><th>Formula</th><th>Rest</th><th>Full tilt (1, 1)</th></tr></thead>
+    <tbody>
+      <tr><td>Colour</td><td class="mono">black × 0.10</td><td class="num">0.10</td><td class="num">0.10</td></tr>
+      <tr><td>Blur radius</td><td class="mono">18 + 6 · |t|</td><td class="num">18</td><td class="num">24</td></tr>
+      <tr><td>Offset x</td><td class="mono">−tilt.x × 20</td><td class="num">0</td><td class="num">−20</td></tr>
+      <tr><td>Offset y</td><td class="mono">6 − tilt.y × 20</td><td class="num">6</td><td class="num">−14</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">The shadow is applied to the composited card before the rotation, so it turns with the card. SwiftUI radius is a Gaussian σ-style blur. For RN's iOS <code>shadowRadius</code> start at the same value and compare; Android elevation cannot express an offset, so there use Skia or a pre-blurred image.</p>
+</section>
+
+<section id="sparkles">
+  <h2><span class="n">08</span>Page sparkles <span class="tag gyro">gyro</span></h2>
+  <p>The two chrome sparkles are page decoration: they don't rotate with the card, but drift a few points against it, which puts the card between them in depth.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Sparkle</th><th>Asset</th><th>Frame on artboard</th><th>Stacking</th><th>Depth d</th><th>Offset</th><th>Full tilt</th></tr></thead>
+    <tbody>
+      <tr><td>Left</td><td><code>inv_star_l</code></td><td class="num">−19.85, 459.20, 85, 89</td><td>behind card</td><td class="num">−9</td><td class="mono">(d·x·0.5, −d·y·0.5)</td><td class="num">∓4.5 pt</td></tr>
+      <tr><td>Right</td><td><code>inv_star_r</code></td><td class="num">250.67, 256.79, 153, 182.33</td><td>in front of card</td><td class="num">+14</td><td class="mono">(d·x·0.5, −d·y·0.5)</td><td class="num">±7 pt</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">Everything else on the page stays still: the background (<code>inv_bg</code>), title, subtitle, OR row, link field, Share button and close button.</p>
+</section>
+
+<section id="haptics">
+  <h2><span class="n">09</span>Haptics <span class="tag haptic">haptic</span></h2>
+  <p>The screen has one haptic source: the <strong>Share invite</strong> button. Tilt is continuous and has no haptics.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Trigger</th><th>iOS generator</th><th>Intensity</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Share invite: press down</td><td class="mono">UIImpactFeedbackGenerator(.heavy)</td><td class="num">1.0</td><td>Fires on touch-down (<code>onPressIn</code>), not on the tap. Call <code>prepare()</code> ahead of time so the first press has no lag.</td></tr>
+      <tr><td>Share invite: release</td><td class="mono">UIImpactFeedbackGenerator(.light)</td><td class="num">0.4</td><td>Fires on every release (<code>onPressOut</code>), including a cancelled press. It is softer on purpose: equal weights read as a double tap.</td></tr>
+      <tr><td>Close (×)</td><td>—</td><td class="num">—</td><td>No haptic, no press animation.</td></tr>
+      <tr><td>Copy link</td><td>—</td><td class="num">—</td><td>Not wired in the prototype yet. Suggested: light impact at 0.6, with a "Link copied" toast.</td></tr>
+      <tr><td>Card tilt / drag</td><td>—</td><td class="num">—</td><td>None.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="grid2">
+    <div class="panel">
+      <h3>Share button press visual</h3>
+      <div class="table-wrap"><table><tbody>
+        <tr><td>Scale while held</td><td class="mono">0.97</td></tr>
+        <tr><td>Scale spring</td><td class="mono">SwiftUI response 0.26 s, damping 0.68 ≈ stiffness 584, damping 32.9, mass 1</td></tr>
+        <tr><td>Face light swap</td><td class="mono">raised → sunk, 75 ms ease-in-out</td></tr>
+        <tr><td>Label opacity held</td><td class="mono">0.9</td></tr>
+        <tr><td>Drop shadow</td><td class="mono">0.5 strength</td></tr>
+      </tbody></table></div>
+    </div>
+    <div class="panel">
+      <h3>React Native mapping</h3>
+      <ul class="plain">
+        <li><code>react-native-haptic-feedback</code>: <code>impactHeavy</code> on press-in, <code>impactLight</code> on press-out. It has no intensity control, so the release will be slightly stronger than 0.4.</li>
+        <li>For exact intensities, use a small native module calling <code>UIImpactFeedbackGenerator.impactOccurred(intensity:)</code>.</li>
+        <li>Android: <code>HapticFeedbackConstants.VIRTUAL_KEY</code> for press-in and <code>KEYBOARD_TAP</code> for press-out, or <code>VibrationEffect.createOneShot(10, amplitude)</code> where amplitude is supported.</li>
+        <li>Respect the app-wide haptics setting: every call is gated on it.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="calc">
+  <h2><span class="n">10</span>Calculator</h2>
+  <p class="print-only muted">Values below are at t = (1.00, 1.00), full tilt on both axes. The interactive version of this sheet (the HTML file) lets you set any tilt.</p>
+  <p class="screen-only">Drag the pad or use the sliders to see every output at any tilt. The pad sets <code>t</code>, the value after inversion. Use it to spot-check the RN build frame by frame.</p>
+  <div class="calc">
+    <div>
+      <div class="pad" id="pad" role="application" aria-label="Tilt pad: drag to set tilt x and y">
+        <div class="ring"></div><div class="dot" id="dot"></div>
+        <span class="lab" style="left:8px;top:50%;transform:translateY(-140%)">x −1</span>
+        <span class="lab" style="right:8px;top:50%;transform:translateY(-140%)">x +1</span>
+        <span class="lab" style="left:50%;top:8px;transform:translateX(8px)">y +1</span>
+        <span class="lab" style="left:50%;bottom:8px;transform:translateX(8px)">y −1</span>
+      </div>
+      <div class="sliders">
+        <label for="tx">t.x <input id="tx" type="range" min="-1" max="1" step="0.01" value="0.6"><output id="txo">0.60</output></label>
+        <label for="ty">t.y <input id="ty" type="range" min="-1" max="1" step="0.01" value="0.3"><output id="tyo">0.30</output></label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="rest" type="button">Rest (0, 0)</button><button class="btn" id="full" type="button">Full (1, 1)</button></div>
+      </div>
+      <div class="card-preview" aria-hidden="true"><div class="c" id="prev"><i></i></div></div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Output</th><th>Value</th></tr></thead>
+      <tbody id="out"></tbody>
+    </table></div>
+  </div>
+</section>
+
+<section id="rn">
+  <h2><span class="n">11</span>React Native notes</h2>
+  <ol class="steps">
+    <li><strong>Sensor on the UI thread:</strong> <code>useAnimatedSensor(SensorType.ROTATION, { interval: 8 })</code> from Reanimated 3. Keep the whole pipeline in worklets so tilt never crosses the bridge.</li>
+    <li><strong>Relative pose:</strong> store the first quaternion as the reference and multiply each reading by its inverse, then read roll and pitch. Subtracting Euler angles also works inside ±30°, but drifts near the edges.</li>
+    <li><strong>Frame loop:</strong> run the step in <code>useFrameCallback</code> with the real <code>dt</code>, so smoothing and recentring behave the same at 60 and 120 Hz.</li>
+    <li><strong>Transforms:</strong> <code>[{ perspective: 481 }, { rotateY: yaw }, { rotateX: pitch }, { rotateZ: roll }]</code> on the card wrapper. RN applies them right to left, which matches the order in §04.</li>
+    <li><strong>Light bands and masks:</strong> use React Native Skia. A <code>LinearGradient</code> in a large <code>Rect</code> with <code>blendMode="plus"</code>, clipped by an <code>Image</code> mask of <code>inv_card_mask</code>. Draw the card layers and the bands into one Skia canvas, then apply the 3D transform to that canvas's wrapper. Blending and clipping then happen in the card's plane, and nothing leaks outside the card at an angle.</li>
+    <li><strong>Springs:</strong> SwiftUI's <code>response</code>/<code>dampingFraction</code> maps to Reanimated as <code>stiffness = (2π / response)²</code> and <code>damping = 2 · ζ · (2π / response)</code>, with mass 1.</li>
+    <li><strong>Assets</strong> are exported at 3× the frames listed: <code>inv_bg</code>, <code>inv_frame</code>, <code>inv_panel</code>, <code>inv_qr</code>, <code>inv_card_mask</code>, <code>inv_star_l</code>, <code>inv_star_r</code>, <code>ic_close</code>, <code>ic_copy</code>, <code>ic_share</code>.</li>
+  </ol>
+<pre><code>// Reanimated sketch: the tilt worklet
+const rot = useAnimatedSensor(SensorType.ROTATION, { interval: 8 });
+const tilt = useSharedValue({ x: 0, y: 0 });
+const s = useSharedValue({ ref: null, bias: {x:0,y:0}, last: {x:0,y:0}, idle: 0 });
+
+useFrameCallback(({ timeSincePreviousFrame }) => {
+  'worklet';
+  const dt = Math.min(0.1, (timeSincePreviousFrame ?? 16.7) / 1000);
+  const { roll, pitch } = relativeTo(s.value, rot.sensor.value); // quaternion × ref⁻¹
+  const clamp = v => Math.max(-1, Math.min(1, v));
+  const sx = clamp(roll * 57.2958 / 30), sy = clamp(pitch * 57.2958 / 30);
+  const speed = Math.hypot(sx - s.value.last.x, sy - s.value.last.y) / dt;
+  const idle = speed &lt; 0.35 ? s.value.idle + dt : 0;
+  let { bias } = s.value;
+  if (idle &gt;= 0.3) {
+    const k = 1 - Math.pow(0.5, dt / 0.45);
+    bias = { x: bias.x + (sx - bias.x) * k, y: bias.y + (sy - bias.y) * k };
+  }
+  s.value = { ...s.value, bias, last: { x: sx, y: sy }, idle };
+  const a = 1 - Math.pow(1 - 0.14, dt * 60);
+  const rx = clamp(sx - bias.x), ry = clamp(sy - bias.y);
+  tilt.value = { x: tilt.value.x + (rx - tilt.value.x) * a,
+                 y: tilt.value.y + (ry - tilt.value.y) * a };
+});
+// Invert X and Y: every visual reads t, not tilt.
+const t = useDerivedValue(() => ({ x: -tilt.value.x, y: -tilt.value.y }));</code></pre>
+</section>
+
+<section id="tuning">
+  <h2><span class="n">12</span>Tuning ranges</h2>
+  <p>The prototype's test panel exposes these knobs. The defaults are the spec; the ranges show how far each can go before it breaks the look. Worth keeping as remote config in RN.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Knob</th><th>Default</th><th>Range</th><th>Affects</th></tr></thead>
+    <tbody>
+      <tr><td>Range (tilt for ±1)</td><td class="num">30°</td><td class="num">8–80°</td><td>Input sensitivity</td></tr>
+      <tr><td>Smoothing</td><td class="num">0.14</td><td class="num">0.02–1</td><td>Lag against jitter; 1 = raw</td></tr>
+      <tr><td>Idle delay</td><td class="num">0.3 s</td><td class="num">0.3–5 s</td><td>When recentring starts</td></tr>
+      <tr><td>Invert X / Y</td><td class="num">on / on</td><td class="num">on or off</td><td>Card leans against (on) or with (off) the device</td></tr>
+      <tr><td>Tilt amount</td><td class="num">19°</td><td class="num">0–40°</td><td>Card yaw/pitch and parallax</td></tr>
+      <tr><td>Perspective</td><td class="num">0.85</td><td class="num">0–1.5</td><td>3D depth of the turn</td></tr>
+      <tr><td>Roll</td><td class="num">2.2°</td><td class="num">0–8°</td><td>In-plane rotation</td></tr>
+      <tr><td>Elevation ×</td><td class="num">1.0</td><td class="num">0–3</td><td>All layer and sparkle depths</td></tr>
+      <tr><td>Contact shadow</td><td class="num">1.0</td><td class="num">0–2</td><td>QR shadow strength</td></tr>
+      <tr><td>Wobble</td><td class="num">5°</td><td class="num">0–20°</td><td>Per-layer in-plane rotation</td></tr>
+      <tr><td>Sheen</td><td class="num">0.38</td><td class="num">0–1</td><td>Specular band strength</td></tr>
+      <tr><td>Holo</td><td class="num">0.16</td><td class="num">0–0.8</td><td>Iridescent band strength</td></tr>
+      <tr><td>Card shadow shift</td><td class="num">20 pt</td><td class="num">0–45 pt</td><td>Shadow travel with tilt</td></tr>
+      <tr><td>Button press scale</td><td class="num">0.97</td><td class="num">0.85–1.0</td><td>Share button while held</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="qa">
+  <h2><span class="n">13</span>QA checklist</h2>
+  <ul class="plain">
+    <li>Phone held still for 0.3 s: the card starts easing back to flat and is most of the way there about 1 s later, with no snap.</li>
+    <li>Right edge of the phone tipped away (inverted axes): the card's right edge comes toward you, the QR drifts left about 2.4 pt, the panel drifts right about 1 pt, and the sheen slides right.</li>
+    <li>At rest, the iridescence is invisible and the sheen is faint (about 0.095).</li>
+    <li>At any angle, no light shows outside the chrome silhouette, including at the corners.</li>
+    <li>Share button: the heavy tick lands on touch-down, before the finger lifts, and a light tick follows on release.</li>
+    <li>Leaving the screen stops the sensor: check battery or CPU in the profiler.</li>
+    <li>Reduced Motion on: consider freezing tilt at 0 (the prototype doesn't yet).</li>
+  </ul>
+</section>
+
+<footer>Generated from the GyroQR iOS prototype on 28 Sep 2026. Values are the code defaults at that date. The Share button press haptics and visual come from the app-wide button (DomeButtonStyle). v3: idle delay 0.3 s, both axes inverted, layer stack added.</footer>
+</div>
+
+<script>
+(function(){
+  var DEG=Math.PI/180, T=19, tan=function(d){return Math.tan(d*DEG)};
+  var tx=document.getElementById('tx'), ty=document.getElementById('ty');
+  var txo=document.getElementById('txo'), tyo=document.getElementById('tyo');
+  var out=document.getElementById('out'), pad=document.getElementById('pad'), dot=document.getElementById('dot'), prev=document.getElementById('prev');
+  function f(v,d){return (v>=0?'+':'')+v.toFixed(d===undefined?2:d)}
+  function render(){
+    var x=parseFloat(tx.value), y=parseFloat(ty.value);
+    txo.textContent=x.toFixed(2); tyo.textContent=y.toFixed(2);
+    var mag=Math.min(1,Math.hypot(x,y)), yaw=x*T, pitch=y*T;
+    var par=function(h){return [h*tan(yaw), -h*tan(pitch)]};
+    var qr=par(7), pn=par(-3), nm=par(3);
+    var rows=[
+      ['tiltMagnitude', mag.toFixed(3)],
+      ['Card yaw (rotateY)', f(yaw,2)+'°'],
+      ['Card pitch (rotateX)', f(pitch,2)+'°'],
+      ['Card roll (rotateZ)', f(x*2.2,2)+'°'],
+      ['QR offset (h +7)', f(qr[0])+', '+f(qr[1])+' pt'],
+      ['Panel offset (h −3)', f(pn[0])+', '+f(pn[1])+' pt'],
+      ['Name offset (h +3)', f(nm[0])+', '+f(nm[1])+' pt'],
+      ['QR wobble', f(x*5*0.2,2)+'°'],
+      ['Name wobble', f(x*5*0.1,2)+'°'],
+      ['QR depth scale', (1+7/600*mag).toFixed(4)],
+      ['Panel depth scale', (1-3/600*mag).toFixed(4)],
+      ['QR contact shadow', f(-0.75*qr[0])+', '+f(2-0.75*qr[1])+' pt'],
+      ['Sheen offset', f(-x*260,1)+', '+f(-y*260,1)+' pt'],
+      ['Sheen opacity', (0.38*(0.25+0.75*mag)).toFixed(3)],
+      ['Holo offset', f(x*300,1)+', '+f(y*300,1)+' pt'],
+      ['Holo opacity', (0.16*mag).toFixed(3)],
+      ['Card shadow radius', (18+6*mag).toFixed(2)+' pt'],
+      ['Card shadow offset', f(-x*20,1)+', '+f(6-y*20,1)+' pt'],
+      ['Left sparkle offset', f(-9*x*0.5)+', '+f(9*y*0.5)+' pt'],
+      ['Right sparkle offset', f(14*x*0.5)+', '+f(-14*y*0.5)+' pt']
+    ];
+    out.innerHTML=rows.map(function(r){return '<tr><td>'+r[0]+'</td><td class="num">'+r[1]+'</td></tr>'}).join('');
+    dot.style.left=(50+x*42)+'%'; dot.style.top=(50-y*42)+'%';
+    prev.style.transform='rotateY('+(yaw)+'deg) rotateX('+(pitch)+'deg) rotateZ('+(x*2.2)+'deg)';
+  }
+  function fromPad(e){
+    var r=pad.getBoundingClientRect();
+    var x=((e.clientX-r.left)/r.width-0.5)/0.42, y=-((e.clientY-r.top)/r.height-0.5)/0.42;
+    tx.value=Math.max(-1,Math.min(1,x)).toFixed(2); ty.value=Math.max(-1,Math.min(1,y)).toFixed(2); render();
+  }
+  var down=false;
+  pad.addEventListener('pointerdown',function(e){down=true; try{pad.setPointerCapture(e.pointerId)}catch(_){} fromPad(e)});
+  pad.addEventListener('pointermove',function(e){if(down)fromPad(e)});
+  pad.addEventListener('pointerup',function(){down=false});
+  pad.addEventListener('pointercancel',function(){down=false});
+  tx.addEventListener('input',render); ty.addEventListener('input',render);
+  document.getElementById('rest').addEventListener('click',function(){tx.value=0;ty.value=0;render()});
+  document.getElementById('full').addEventListener('click',function(){tx.value=1;ty.value=1;render()});
+  render();
+})();
+</script>
+
+</body>
+</html>

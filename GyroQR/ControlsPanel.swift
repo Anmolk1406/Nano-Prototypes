@@ -7,11 +7,15 @@ struct ControlsPanel: View {
     @ObservedObject var skin: SkinTuning
     @ObservedObject var onb: OnboardingTuning
     @ObservedObject var topUp: TopUpTuning
+    @ObservedObject var button: ButtonLabTuning
+    @ObservedObject var shine: ShineLabTuning
     @Binding var scene: AppScene
     @Binding var step: OnboardingStep
     @Binding var expanded: Bool
     /// The account page's one control: play its entrance again.
     @Binding var accountReplay: Int
+    /// The parent flow's one control: start it again.
+    @Binding var parentReplay: Int
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,42 +23,16 @@ struct ControlsPanel: View {
             if expanded {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        sceneSection
-                        Divider().overlay(.white.opacity(0.12))
-                        if scene == .onboarding {
-                            stepSection
-                            Divider().overlay(.white.opacity(0.12))
-                            avatarSection
-                            Divider().overlay(.white.opacity(0.12))
-                        }
-                        if scene == .skinSelect || scene == .onboarding {
-                            motionSection
-                            Divider().overlay(.white.opacity(0.12))
-                            gestureSection
-                            Divider().overlay(.white.opacity(0.12))
-                            arcSection
-                            Divider().overlay(.white.opacity(0.12))
-                            hapticsSection
-                        }
-                        if scene == .topUp {
-                            topUpSection
-                            Divider().overlay(.white.opacity(0.12))
-                            hapticsSection
-                        }
-                        if scene == .account {
-                            accountSection
-                            Divider().overlay(.white.opacity(0.12))
-                            hapticsSection
-                        }
-                        if scene == .qrCard {
-                            sourceSection
-                        Divider().overlay(.white.opacity(0.12))
-                        tiltSection
-                        Divider().overlay(.white.opacity(0.12))
-                        lightSection
-                        Divider().overlay(.white.opacity(0.12))
-                        stageSection
-                        }
+                        // Each group is built in its own `body` (see
+                        // `Deferred`), not inline here. Inline, every scene's
+                        // sections were laid out in this one closure's stack
+                        // frame — in a debug build each branch gets its own
+                        // slots even though only one runs — and once the
+                        // Button lab's controls were added it outgrew the main
+                        // thread's stack and crashed the app mid-use.
+                        Deferred { sceneSection }
+                        divider
+                        Deferred { sceneControls }
                     }
                     .padding(.horizontal, 18)
                     .padding(.bottom, 18)
@@ -67,6 +45,138 @@ struct ControlsPanel: View {
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 22, topTrailingRadius: 22,
                                           style: .continuous))
         .ignoresSafeArea(edges: .bottom)
+    }
+
+    private var divider: some View { Divider().overlay(.white.opacity(0.12)) }
+
+    @ViewBuilder private var sceneControls: some View {
+        switch scene {
+        case .onboarding: Deferred { onboardingControls }
+        case .skinSelect: Deferred { skinControls }
+        case .topUp:      Deferred { topUpControls }
+        case .button:     Deferred { buttonControls }
+        case .account:    Deferred { accountControls }
+        case .qrCard:     Deferred { qrControls }
+        case .parent:     Deferred { parentControls }
+        case .shineLab:   Deferred { shineLabControls }
+        // Its picker and Replay are on the screen itself.
+        case .lottieLab:  EmptyView()
+        }
+    }
+
+    private var onboardingControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Deferred { stepSection }
+            divider
+            VStack(alignment: .leading, spacing: 8) {
+                header("Buttons")
+                PressScaleRow()
+            }
+            divider
+            Deferred { avatarSection }
+            divider
+            Deferred { skinControls }
+        }
+    }
+
+    private var skinControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Deferred { motionSection }
+            divider
+            Deferred { gestureSection }
+            divider
+            Deferred { arcSection }
+            divider
+            Deferred { hapticsSection }
+        }
+    }
+
+    private var topUpControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Deferred { topUpSection }
+            divider
+            Deferred { hapticsSection }
+        }
+    }
+
+    private var buttonControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Deferred { buttonSection }
+            divider
+            ButtonHapticsSection(h: button.haptics)
+        }
+    }
+
+    private var accountControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Deferred { accountSection }
+            divider
+            Deferred { hapticsSection }
+        }
+    }
+
+    private var parentControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header("Parent onboarding")
+            Text("Adding a kid, ten frames on six pages. Pages push on a spring "
+                 + "(320 / 28) under the progress bar, which stays put and fills. The celebration, "
+                 + "the email sheet and Let's Go are overlays on their page; the wallet intro "
+                 + "brings its own elements in.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            header("Buttons")
+            PressScaleRow()
+            Button("Restart") { parentReplay += 1 }
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .buttonStyle(.bordered)
+                .tint(.white.opacity(0.9))
+        }
+    }
+
+    private var shineLabControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Deferred { sourceSection }
+            divider
+            VStack(alignment: .leading, spacing: 8) {
+                header("Shines")
+                Text("Experimental. Each shine rides the rim's outer or inner bevel, alternating along "
+                     + "each side, and runs along it with the tilt \u{2014} top and bottom on x, the sides on y \u{2014} "
+                     + "stopping short of the corner and never glowing in over the panel. "
+                     + "The corner shine stays put and glints toward its corner.")
+                    .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+                slider("Travel", $shine.travel, 0...400, unit: "px", format: "%.0f")
+                slider("Rest glow", $shine.restGlow, 0...1)
+                slider("Stretch", $shine.stretch, 0...0.5)
+                Toggle("Orbit (opposite edges run opposite ways)", isOn: $shine.orbit).font(rowFont)
+                Toggle("Additive", isOn: $shine.additive).font(rowFont)
+                Toggle("White halo round the card", isOn: $shine.halo).font(rowFont)
+                Toggle("Show bevel tracks", isOn: $shine.showEdges).font(rowFont)
+                Button("Reset") { shine.reset() }
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .buttonStyle(.bordered)
+                    .tint(.white.opacity(0.9))
+            }
+            divider
+            // The card's own motion and light are the QR card's, shared with
+            // it — tilt, parallax, sheen, iridescence, shadow.
+            Deferred { tiltSection }
+            divider
+            Deferred { lightSection }
+            // The holo card has no border for the shared rim light to draw
+            // on, so it has a rim light of its own over the rim band.
+            slider("Rim strength", $shine.rimStrength, 0...1, enabled: t.rimEnabled)
+        }
+    }
+
+    private var qrControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Deferred { sourceSection }
+            divider
+            Deferred { tiltSection }
+            divider
+            Deferred { lightSection }
+            divider
+            Deferred { stageSection }
+        }
     }
 
     private var handle: some View {
@@ -90,10 +200,28 @@ struct ControlsPanel: View {
     private var sceneSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             header("Scene")
-            Picker("", selection: $scene) {
-                ForEach(AppScene.allCases) { s in Text(s.rawValue).tag(s) }
+            // A dropdown rather than a segmented control: at eight scenes the
+            // segments were too narrow to show their names.
+            Menu {
+                Picker("", selection: $scene) {
+                    ForEach(AppScene.allCases) { s in Text(s.rawValue).tag(s) }
+                }
+            } label: {
+                HStack {
+                    Text(scene.rawValue)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .opacity(0.6)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .frame(height: 40)
+                .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .contentShape(Rectangle())
             }
-            .pickerStyle(.segmented)
+            .accessibilityLabel("Scene")
             if scene == .skinSelect || scene == .onboarding {
                 Text("Swipe the card up to cycle skins, drag it down to confirm.")
                     .font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
@@ -101,6 +229,10 @@ struct ControlsPanel: View {
             if scene == .topUp {
                 Text("Tap Request top up on the wallet, enter an amount, and "
                      + "send it. Replay runs the whole round trip hands-free.")
+                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
+            }
+            if scene == .button {
+                Text("Press and hold the button. Pressed \(button.presses)\u{00D7}.")
                     .font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
             }
             if scene == .account {
@@ -124,14 +256,6 @@ struct ControlsPanel: View {
                  + "its toast and error haptic have no other way in.")
                 .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
 
-            header("Interest icons").padding(.top, 4)
-            Picker("", selection: $onb.categoryArt) {
-                ForEach(OnboardingTuning.CategoryArt.allCases) { s in Text(s.rawValue).tag(s) }
-            }
-            .pickerStyle(.segmented)
-            Text("The sheet draws all ten categories twice and does not say "
-                 + "which set is the real one, so both are here.")
-                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
         }
     }
 
@@ -152,6 +276,14 @@ struct ControlsPanel: View {
                    enabled: onb.dragBlur)
             Text("Cross blurs both sides on one curve; Zoom adds a scale punch; "
                  + "Glass sweeps a frosted scrim over the swap.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+
+            header("Shake to shuffle").padding(.top, 8)
+            slider("Threshold", $onb.shakeThreshold, 0.3...2.5, unit: "g", format: "%.2f")
+            slider("Jolts", $onb.shakePeaks, 1...3, format: "%.0f")
+            Text(String(format: "Last jolt: %.2fg. ", onb.shakeLastPeak)
+                 + "Lower threshold is more sensitive; iOS's own shake needs about 2g. "
+                 + "Jolts is how many hits within 0.6s make a shake.")
                 .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
 
             header("Avatar row").padding(.top, 8)
@@ -232,6 +364,12 @@ struct ControlsPanel: View {
                    enabled: skin.bendEnabled)
             Text("A Metal distortion, so it needs the Metal toolchain to build. "
                  + "Off leaves the card cut by a straight line at the mouth.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+
+            header("Confirm screen").padding(.top, 8)
+            slider("Card tint", $skin.confirmTint, 0...1, format: "%.2f")
+            Text("How far the wash and the rays across the top lean toward the "
+                 + "chosen card's colour. 0 is the design's grey and white.")
                 .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
         }
     }
@@ -484,6 +622,60 @@ struct ControlsPanel: View {
         }
     }
 
+    // MARK: button
+
+    private var buttonSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header("Press style")
+            Picker("", selection: $button.style) {
+                ForEach(ButtonLabTuning.PressStyle.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            Text(button.style == .round
+                 ? "A 1:1 replica of the reference's dome. Raised and lit from "
+                   + "above; pressed, lit from below under a lip, with a strong "
+                   + "rim on top and a dark one along the bottom."
+                 : button.style == .slab
+                 ? "Two variants. 1: the design at rest, pressed state built here. "
+                   + "2: both states from Figma's 2nd variant. Both share the press "
+                   + "scale, bounce, response, depth and light-change duration."
+                 : "The first brief: grows under the finger, fill and rim swap ends.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            if button.style == .slab {
+                PressScaleRow()
+            } else {
+                slider("Scale", $button.pressScale, 1.0...1.12, unit: "\u{00D7}", format: "%.3f")
+            }
+            if button.style != .lift {
+                slider("Shine", $button.shine, 0...1)
+                slider("Shine width", $button.shineWidth, 0.3...2, unit: "\u{00D7}")
+                if button.style == .slab { DropShadowRow(); PressShadeRows() }
+                Text("The rim of light along the top edge while pressed. 1 and 1\u{00D7} "
+                     + "are the calibrated look.")
+                    .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            }
+            if button.style != .slab {
+                slider("Response", $button.springResponse, 0.08...0.6, unit: "s")
+                slider("Damping", $button.springDamping, 0.3...1.0)
+                slider("Lift shadow", $button.liftShadow, 0...0.4)
+            }
+
+            header("Colour flip").padding(.top, 4)
+            Toggle(button.style == .lift ? "Swap fill and stroke" : "Change the light",
+                   isOn: $button.flipEnabled).font(rowFont)
+            slider("Duration", Binding(get: { button.flipDuration * 1000 },
+                                       set: { button.flipDuration = $0 / 1000 }),
+                   0...300, unit: "ms", format: "%.0f", enabled: button.flipEnabled)
+            Text("Both ways at this duration. 80ms is the brief, and about what "
+                 + "the reference takes \u{2014} 4 to 5 frames at 60fps.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            Button("Reset") { button.resetMotion() }
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .buttonStyle(.bordered)
+                .tint(.white.opacity(0.9))
+        }
+    }
+
     // MARK: bits
 
     private var rowFont: Font { .system(size: 13, weight: .medium, design: .rounded) }
@@ -511,4 +703,150 @@ struct ControlsPanel: View {
         .foregroundStyle(.white.opacity(enabled ? 0.85 : 0.3))
         .disabled(!enabled)
     }
+}
+
+/// The press haptic's controls. Its own view so it can observe the haptics
+/// object directly — it lives inside the tuning object, and SwiftUI only
+/// watches the object a view is handed.
+private struct ButtonHapticsSection: View {
+    @ObservedObject var h: PressHaptics
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("PRESS HAPTIC")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.45)).kerning(0.8).padding(.top, 4)
+            Toggle("On press-down", isOn: $h.enabled)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+            Picker("", selection: $h.source) {
+                ForEach(PressHaptics.Source.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            if h.source == .impact {
+                Picker("", selection: $h.style) {
+                    ForEach(PressHaptics.Style.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+            }
+            row("Intensity", $h.intensity)
+            if h.source == .core {
+                row("Sharpness", $h.sharpness)
+                Text("Low sharpness is a dull thud, high a crisp click.")
+                    .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            }
+            Toggle("Also on release", isOn: $h.onRelease)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+            if h.onRelease { row("Release", $h.releaseIntensity) }
+            Button("Feel it") { h.pressDown() }
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .buttonStyle(.bordered)
+                .tint(.white.opacity(0.9))
+        }
+        .disabled(false)
+    }
+
+    private func row(_ label: String, _ v: Binding<Double>) -> some View {
+        HStack(spacing: 10) {
+            Text(label).font(.system(size: 12, design: .rounded))
+                .frame(width: 92, alignment: .leading)
+            Slider(value: v, in: 0...1)
+            Text(String(format: "%.2f", v.wrappedValue))
+                .font(.system(size: 11, design: .monospaced))
+                .frame(width: 52, alignment: .trailing)
+        }
+        .foregroundStyle(.white.opacity(0.85))
+    }
+}
+
+/// The primary button's drop shadow — the shared value, so this moves every
+/// such button in the app, not just the lab's.
+/// The press-down's shadows on every primary and white button — the shared
+/// values: the shade across the top of the sunk face, the well round the
+/// button, and how far it drops.
+private struct PressShadeRows: View {
+    @ObservedObject var shadow = DomeShadow.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            row("Top shade", $shadow.topShade, 0...1, "%.2f")
+            row("White shade", $shadow.whiteTopShade, 0...1, "%.2f")
+            row("Well", $shadow.well, 0...1, "%.2f")
+            row("Press depth", $shadow.pressDepth, 0...3, "%.1fpt")
+            Toggle("Stroke changes on press", isOn: $shadow.strokeChange)
+                .font(.system(size: 12, design: .rounded))
+            Text("While held. Top shade is the shadow across the top of the face — "
+                 + "dark button, then white; "
+                 + "Well is the dark ring round the button, 0 to hide it. "
+                 + "Stroke off keeps the outline's rest colours while held.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+        }
+        .foregroundStyle(.white.opacity(0.85))
+    }
+
+    private func row(_ title: String, _ value: Binding<Double>,
+                     _ range: ClosedRange<Double>, _ format: String) -> some View {
+        HStack(spacing: 10) {
+            Text(title).font(.system(size: 12, design: .rounded))
+                .frame(width: 92, alignment: .leading)
+            Slider(value: value, in: range)
+            Text(String(format: format, value.wrappedValue))
+                .font(.system(size: 11, design: .monospaced))
+                .frame(width: 52, alignment: .trailing)
+        }
+    }
+}
+
+private struct DropShadowRow: View {
+    @ObservedObject var shadow = DomeShadow.shared
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("Drop shadow").font(.system(size: 12, design: .rounded))
+                .frame(width: 92, alignment: .leading)
+            Slider(value: $shadow.strength, in: 0...1)
+            Text(String(format: "%.2f", shadow.strength))
+                .font(.system(size: 11, design: .monospaced))
+                .frame(width: 52, alignment: .trailing)
+        }
+        .foregroundStyle(.white.opacity(0.85))
+    }
+}
+
+/// How far every primary and white button shrinks under the finger, and how
+/// much it bounces — the shared values.
+struct PressScaleRow: View {
+    @ObservedObject var shared = DomeShadow.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            row("Press scale", $shared.pressScale, 0.85...1.0, "%.3f\u{00D7}")
+            row("Bounce", $shared.pressBounce, 0...0.85, "%.2f")
+            row("Response", $shared.pressResponse, 0.12...0.6, "%.2fs")
+            Text("Every primary and white button, while held. Scale 1 is no change; "
+                 + "bounce 0 settles without overshoot, higher dips past the held "
+                 + "size and pops past full size on release.")
+                .font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+        }
+        .foregroundStyle(.white.opacity(0.85))
+    }
+
+    private func row(_ title: String, _ value: Binding<Double>,
+                     _ range: ClosedRange<Double>, _ format: String) -> some View {
+        HStack(spacing: 10) {
+            Text(title).font(.system(size: 12, design: .rounded))
+                .frame(width: 92, alignment: .leading)
+            Slider(value: value, in: range)
+            Text(String(format: format, value.wrappedValue))
+                .font(.system(size: 11, design: .monospaced))
+                .frame(width: 52, alignment: .trailing)
+        }
+    }
+}
+
+/// Builds its content in its own `body`, which SwiftUI calls in a separate
+/// update — so a large section's views are laid out in that call's stack
+/// frame instead of in the frame of whatever contains it.
+private struct Deferred<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    var body: some View { content() }
 }

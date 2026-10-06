@@ -57,6 +57,16 @@ final class OnboardingTuning: ObservableObject {
     @Published var dragBlur = true
     @Published var dragBlurAmount: Double = 0.10
 
+    // shake to shuffle
+    /// How hard a jolt has to be to count, in g of user acceleration —
+    /// lower is more sensitive. iOS's own shake needs roughly 2g+.
+    @Published var shakeThreshold: Double = 0.9
+    /// Jolts needed within 0.6s. One is the most sensitive, and also the
+    /// easiest to set off by putting the phone down.
+    @Published var shakePeaks: Double = 2
+    /// The last jolt seen, for setting the threshold by feel.
+    @Published var shakeLastPeak: Double = 0
+
     // avatar row
     //
     // The row went from five fixed chips to fifteen that scroll, and the
@@ -104,6 +114,7 @@ final class OnboardingTuning: ObservableObject {
         avatarResponse = 0.38
         dragBlur = true
         dragBlurAmount = 0.10
+        shakeThreshold = 0.9; shakePeaks = 2
         rowBlur = 9; rowFade = 0.55; rowShrink = 0.22
     }
 }

@@ -3,11 +3,13 @@ import AVFoundation
 
 /// Step 1 — `Splash Setup - Burst 2` (845:48810).
 ///
-/// The designer's export is VP9-in-WebM, which iOS cannot decode at all, so the
-/// build step transcodes it to H.264 (`Tools/make_onboarding.py`). There is no
+/// The clip is the After Effects render `Splash / Nano 2x 1Oct.mp4` (1.93s),
+/// re-encoded to HEVC by the build step (`Tools/make_onboarding.py`). The
+/// designer's WebM can't be bundled: iOS has no VP9 decoder. There is no
 /// alpha channel in the source, so a plain opaque mp4 loses nothing.
 ///
-/// The clip ends on the hero shot — burst, logo, characters — and the email step
+/// The clip ends on the hero shot — "welcome back to nano" over the gift
+/// box — and the email step
 /// keeps that exact frame as its backdrop, so the hand-off reads as one
 /// continuous scene rather than two screens.
 struct SplashView: View {
@@ -16,11 +18,12 @@ struct SplashView: View {
     var body: some View {
         ZStack {
             // Behind the video, so the very first frame can never flash white.
-            Color(hex: 0x9B5DE5).ignoresSafeArea()
+            // Matches the clip's first frame.
+            Color(hex: 0x6423C8).ignoresSafeArea()
             VideoLayer(resource: "splash_burst", ext: "mp4", onEnd: onFinish)
                 .ignoresSafeArea()
         }
-        // Tapping skips ahead — a 2.5s splash gets old fast when you are
+        // Tapping skips ahead — even a 1.9s splash gets old fast when you are
         // reviewing the steps that follow it.
         .contentShape(Rectangle())
         .onTapGesture { onFinish() }
@@ -32,7 +35,7 @@ struct SplashView: View {
 /// `AVKit.VideoPlayer` would bring its own transport controls and inset the
 /// video; a bare player layer is what gives an edge-to-edge frame with nothing
 /// drawn over it.
-private struct VideoLayer: UIViewRepresentable {
+struct VideoLayer: UIViewRepresentable {
     let resource: String
     let ext: String
     var onEnd: () -> Void

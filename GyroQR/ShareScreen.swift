@@ -12,6 +12,13 @@ struct ShareScreen: View {
     @ObservedObject var motion: MotionEngine
     @ObservedObject var t: Tuning
     var onClose: () -> Void = {}
+    /// The invite screen's card. The flows keep the default; the shine lab
+    /// swaps in the holo card and its running shines.
+    var inviteCard: CardSpec = .invite
+    var inviteExtra: AnyView? = nil
+    var inviteUnder: AnyView? = nil
+    /// Flattens the invite card before it turns — see `GyroCardView.flatten`.
+    var inviteFlatten = false
 
     var body: some View {
         GeometryReader { geo in
@@ -35,8 +42,10 @@ struct ShareScreen: View {
     }
 
     /// The card, with the drag fallback for when there is no gyro to read.
-    private func card(_ spec: CardSpec) -> some View {
-        GyroCardView(out: motion.out, t: t, spec: spec, onClose: onClose)
+    private func card(_ spec: CardSpec, extra: AnyView? = nil, under: AnyView? = nil,
+                      flatten: Bool = false) -> some View {
+        GyroCardView(out: motion.out, t: t, spec: spec, onClose: onClose,
+                     extra: extra, under: under, flatten: flatten)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -104,7 +113,7 @@ struct ShareScreen: View {
             // overlaps the frame's edge.
             sparkle("inv_star_l", ScreenSpec.starLeft, depth: -9)
 
-            card(.invite)
+            card(inviteCard, extra: inviteExtra, under: inviteUnder, flatten: inviteFlatten)
                 .offset(x: ScreenSpec.card.minX, y: ScreenSpec.card.minY)
 
             sparkle("inv_star_r", ScreenSpec.starRight, depth: 14)
@@ -272,7 +281,7 @@ struct ShareScreen: View {
         .overlay { Capsule().strokeBorder(ScreenSpec.Palette.borderField, lineWidth: 1) }
     }
 
-    // M-NeutralButton, H52
+    // M-NeutralButton, H52 — the app's primary button; see `DomeButtonStyle`.
     private var shareButton: some View {
         Button {} label: {
             HStack(spacing: 8) {
@@ -286,26 +295,8 @@ struct ShareScreen: View {
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .frame(height: 52)
-            // A vertical ramp, not the flat navy the old screen used, plus the
-            // two inset shadows the component carries: a dark lip along the
-            // bottom and a faint light one along the top.
-            .background(
-                LinearGradient(stops: [.init(color: ScreenSpec.Palette.buttonTop, location: 0.5),
-                                       .init(color: ScreenSpec.Palette.buttonBottom, location: 1)],
-                               startPoint: .top, endPoint: .bottom))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(LinearGradient(
-                        stops: [.init(color: .white.opacity(0.18), location: 0),
-                                .init(color: .clear, location: 0.22),
-                                .init(color: .clear, location: 0.82),
-                                .init(color: .black.opacity(0.55), location: 1)],
-                        startPoint: .top, endPoint: .bottom))
-                    .allowsHitTesting(false)
-            }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(DomeButtonStyle())
     }
 }
 

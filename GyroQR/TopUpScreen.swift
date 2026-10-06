@@ -308,7 +308,7 @@ struct TopUpScreen: View {
                 .frame(width: TopUpSpec.noteBox.width, height: TopUpSpec.noteBox.height)
                 .offset(x: TopUpSpec.noteBox.minX, y: TopUpSpec.noteBox.minY)
 
-            NeutralCTA(title: TopUpSpec.cta, enabled: !amount.isEmpty, lift: true) { send() }
+            NeutralCTA(title: TopUpSpec.cta, enabled: !amount.isEmpty) { send() }
                 .frame(width: TopUpSpec.ctaBox.width)
                 .offset(x: TopUpSpec.ctaBox.minX, y: TopUpSpec.ctaBox.minY)
 

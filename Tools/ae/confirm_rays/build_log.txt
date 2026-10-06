@@ -1,0 +1,12 @@
+ok   read layout
+ok   clear previous build
+ok   folder + footage
+ok   comp
+ok   WASH_GUIDE
+ok   RAY_A
+ok   RAY_B
+ok   RAY_C
+ok   RAY_D
+ok   RAY_SWEEP
+ok   open
+done

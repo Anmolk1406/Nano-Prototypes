@@ -26,8 +26,12 @@ enum AccountSpec {
 
     // MARK: art
 
-    /// The backdrop, with everything that animates patched out of it.
+    /// The backdrop, rebuilt from its recipe with nothing ever in front of it
+    /// — see `Tools/build_account_layers.py`.
     static let backdrop = CGRect(x: 0, y: 0, width: 375, height: 429)
+    /// The rays entrance, a dotLottie authored in After Effects
+    /// (`Tools/ae/build_account_rays.jsx`), 1.5s, ending on `acct_bg`.
+    static let raysAnimation = "acct_rays"
 
     /// `Ellipse 24643` (978:15212).
     ///
@@ -49,13 +53,12 @@ enum AccountSpec {
 
     /// The three props that drift in, with the direction each comes from.
     ///
-    /// The resting positions are searched rather than taken from the frame,
-    /// by the one test that needs no knowledge of the prop's colour: where the
-    /// prop's alpha is zero the finished header must already equal the
-    /// backdrop. The star and the bolt land within a third of a point of their
-    /// Figma numbers; the ball is **7pt higher** than its frame says, and a
-    /// prop that is 7pt out leaves a crescent of stale purple behind it the
-    /// moment it moves.
+    /// The resting positions are the nodes' CSS boxes, header-local (Figma y
+    /// minus 197). Each prop is its own upload at its CSS transform, and
+    /// composited over the rebuilt backdrop it lands on the render to within
+    /// a third of a point. An earlier cut searched these positions against a
+    /// *patched* backdrop instead and put the ball 4pt low — the search was
+    /// fitting the patch, not the ball.
     ///
     /// The entry offsets are chosen rather than measured — the design is a
     /// still, so there is no reference for where they come *from*. Each takes
@@ -63,11 +66,11 @@ enum AccountSpec {
     /// read as one gesture instead of three: the ball and the star out to the
     /// right, the bolt out to the left.
     static let props = [
-        (image: "acct_ball", frame: CGRect(x: 288.33, y: 96.67, width: 57.95, height: 57.95),
+        (image: "acct_ball", frame: CGRect(x: 287.51, y: 92.76, width: 57.95, height: 57.95),
          from: CGSize(width: 96, height: -34)),
-        (image: "acct_star", frame: CGRect(x: 288.00, y: 263.67, width: 82.18, height: 82.18),
+        (image: "acct_star", frame: CGRect(x: 288.23, y: 263.91, width: 82.18, height: 82.18),
          from: CGSize(width: 112, height: 26)),
-        (image: "acct_bolt", frame: CGRect(x: 48.33, y: 263.67, width: 42.51, height: 41.97),
+        (image: "acct_bolt", frame: CGRect(x: 48.36, y: 263.79, width: 42.51, height: 41.97),
          from: CGSize(width: -104, height: 14)),
     ]
 

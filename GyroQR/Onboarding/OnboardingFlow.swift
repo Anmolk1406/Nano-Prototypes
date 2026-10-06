@@ -5,6 +5,7 @@ enum OnboardingStep: String, CaseIterable, Identifiable {
     case splash    = "Splash"
     case email     = "Email"
     case otp       = "OTP"
+    case intro     = "Intro"
     case skin      = "Skin"
     case avatar    = "Avatar"
     case interests = "Interests"
@@ -35,6 +36,8 @@ struct OnboardingFlow: View {
 
     @State private var email = "kiaankhalid@gmail.com"
     @State private var forward = true
+    /// The next arrival fades instead of pushing — the intro into the picker.
+    @State private var fading = false
 
     var body: some View {
         GeometryReader { geo in
@@ -62,26 +65,35 @@ struct OnboardingFlow: View {
             switch step {
             case .splash:
                 SplashView { go(.email) }
-                    .transition(.opacity)
+                    .transition(.asymmetric(insertion: .opacity, removal: .opacity))
             case .email:
-                // Crossfade, not a push: this step's backdrop is the splash
-                // clip's final frame, so a fade reads as one continuous shot.
+                // Arrives by crossfade, not a push: this step's backdrop is
+                // the splash clip's final frame, so a fade reads as one
+                // continuous shot. It leaves by the push like every page.
                 EmailPromptView { entered in
                     email = entered.isEmpty ? email : entered
                     go(.otp)
                 }
-                .transition(.opacity)
+                .transition(.asymmetric(insertion: .opacity, removal: pushOut))
             case .otp:
-                OTPView(tune: tune, email: email) { go(.skin) }
+                OTPView(tune: tune, email: email) { go(.intro) }
                     .transition(push)
+            case .intro:
+                // It has already faded itself out to white by the time it
+                // calls this, so it simply goes; the picker then fades in.
+                SkinIntroView { go(.skin, fade: true) }
+                    .transition(.asymmetric(insertion: push, removal: .identity))
+                    .zIndex(0)
             case .skin:
                 SkinSelectScreen(tune: skinTune, onContinue: { go(.avatar) })
-                    .transition(push)
+                    .transition(fading ? .asymmetric(insertion: .opacity, removal: pushOut) : push)
+                    .zIndex(1)
             case .avatar:
-                AvatarSelectView(tune: tune) { _ in go(.interests) }
+                AvatarSelectView(tune: tune, onBack: { go(.skin) }) { _ in go(.interests) }
                     .transition(push)
             case .interests:
-                InterestsView(tune: tune, onContinue: { _ in go(.done) }, onSkip: { go(.done) })
+                InterestsView(tune: tune, onBack: { go(.avatar) },
+                              onContinue: { _ in go(.done) }, onSkip: { go(.done) })
                     .transition(push)
             case .done:
                 DoneView { go(.splash) }
@@ -89,20 +101,35 @@ struct OnboardingFlow: View {
             }
         }
         .frame(width: OnboardingSpec.size.width, height: OnboardingSpec.size.height)
-        .animation(.spring(response: 0.5, dampingFraction: 0.88), value: step)
     }
 
+    /// The parent flow's push (`ParentFlow.push`): a full-width slide with a
+    /// fade, mirrored going back.
     private var push: AnyTransition {
         let inEdge: Edge  = forward ? .trailing : .leading
-        let outEdge: Edge = forward ? .leading : .trailing
         return .asymmetric(
             insertion: .move(edge: inEdge).combined(with: .opacity),
-            removal:   .move(edge: outEdge).combined(with: .opacity))
+            removal:   pushOut)
     }
 
-    private func go(_ next: OnboardingStep) {
+    private var pushOut: AnyTransition {
+        .move(edge: forward ? .leading : .trailing).combined(with: .opacity)
+    }
+
+    /// As the parent flow moves: the direction lands a frame ahead of the
+    /// step, then the step changes on `ParentSpec.page` (stiffness 320,
+    /// damping 28). A removal transition is read off the leaving page as it
+    /// was last drawn, so a direction set in the same update as the move
+    /// would send the old page out by the edge the previous move used.
+    ///
+    /// `fade` swaps the push for a 0.45s ease-out fade-in, for the one
+    /// hand-off that should not drill: the skins intro into the picker.
+    private func go(_ next: OnboardingStep, fade: Bool = false) {
         forward = (next.index ?? 0) >= (step.index ?? 0)
-        step = next
+        fading = fade
+        DispatchQueue.main.async {
+            withAnimation(fade ? .easeOut(duration: 0.45) : ParentSpec.page) { step = next }
+        }
     }
 }
 

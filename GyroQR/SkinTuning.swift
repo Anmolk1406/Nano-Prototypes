@@ -40,7 +40,7 @@ final class SkinTuning: ObservableObject {
     @Published var entryDelay: Double = 0.35
 
     // idle hints
-    @Published var hintsEnabled = false
+    @Published var hintsEnabled = true
     /// How much of a real cycle the hint plays back.
     @Published var hintCycleAmount: Double = 0.16
     /// How much of a real confirm pull the hint plays back.
@@ -84,9 +84,14 @@ final class SkinTuning: ObservableObject {
     /// look wrong. Off leaves the straight cut.
     @Published var bendEnabled = true
     /// Points of displacement at the edge.
-    @Published var bendAmount: Double = 6
+    @Published var bendAmount: Double = 2
     /// How far either side of the edge the pinch reaches.
-    @Published var bendReach: Double = 30
+    @Published var bendReach: Double = 18
+
+    // confirm screen
+    /// How far the confirm screen's wash leans toward the chosen card's
+    /// colour: 0 is the design's grey, 1 the card's colour outright.
+    @Published var confirmTint: Double = 0.35
 
     // background transition
     @Published var bgStyle: BGStyle = .crossfade
@@ -119,12 +124,13 @@ final class SkinTuning: ObservableObject {
     func reset() {
         entryEnabled = true; entryResponse = 0.55; entryStagger = 0.120
         entryDelay = 0.35; cycleAxis = .up
-        hintsEnabled = false; hintCycleAmount = 0.16; hintPullAmount = 0.13; hintRepeat = 5.0
+        hintsEnabled = true; hintCycleAmount = 0.16; hintPullAmount = 0.13; hintRepeat = 5.0
         throwTravel = 1.0; pullTravel = 1.0; cycleDetents = 5
         cycleDuration = SkinSelectSpec.cycleDuration
         cyclePreview = SkinSelectSpec.cyclePreview
         glowEnabled = true; glowPeriod = 2.6; glowThickness = 1.0
-        bendEnabled = true; bendAmount = 6; bendReach = 30
+        bendEnabled = true; bendAmount = 2; bendReach = 18
+        confirmTint = 0.35
         bgStyle = .crossfade; arcDepth = 360; arcEdge = .glow; arcEdgeWidth = 26; arcEdgeIntensity = 0.55
     }
 }

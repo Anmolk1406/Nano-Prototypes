@@ -34,9 +34,18 @@ struct SkinSelectScreen: View {
     @State private var tuck: Double = 0
     @State private var confirmed = false
     @State private var settleBounce = false
+    /// The confirm screen's own layers are up — the wash, the rays, the
+    /// type and the stickers. Only once the sheet has finished covering the
+    /// screen, and gone again the moment anything moves: while the sheet
+    /// travels, the sheet alone is the base.
+    @State private var stageShown = false
     @State private var dealt = false              // entry animation has run
     @State private var hintPull: Double = 0       // confirm hint, 0…1
     @State private var hintTask: Task<Void, Never>?
+    /// The gesture the idle coaching is showing, if any — its words and its
+    /// hand. `coachTick` restarts the hand from its first frame.
+    @State private var coach: CoachGesture?
+    @State private var coachTick = 0
     @State private var interacted = false
     @State private var cycleDetent = 0        // last detent index ticked on the throw
     /// Whether each direction has passed its commit threshold, so the "you can
@@ -76,6 +85,16 @@ struct SkinSelectScreen: View {
     /// 0 while the stack is in play, 1 once it has flown out. Driven by the
     /// selection completing rather than by the drag.
     @State private var exitDrive: Double = 0
+    /// Points the settled card has been dragged back up, toward the stack.
+    @State private var liftDrag: CGFloat = 0
+    @State private var armedLift = false
+    /// True while a settled card is on its way back to the stack.
+    ///
+    /// The card has to stay in front of the sheet for the whole return. It
+    /// starts on top of the sheet and the sheet is what falls away, so
+    /// dropping it behind the sheet the moment `confirmed` clears would cut
+    /// it off at the mouth and let the sheet swallow it on the way down.
+    @State private var unsettling = false
 
     /// `-skinIndex N` opens on a given card, so a specific skin's glow palette
     /// can be looked at without throwing the stack round to it.
@@ -176,6 +195,23 @@ struct SkinSelectScreen: View {
     /// last few points of travel.
     private var seat: Double { min(1, pull / Double(SkinSelectSpec.commitFraction)) }
 
+    /// 0…1 — how far the settled card has been drawn back up.
+    private var lift: Double {
+        guard confirmed else { return 0 }
+        return min(1, Double(liftDrag / SkinSelectSpec.liftThreshold))
+    }
+
+    /// The lift's travel on screen: one-to-one up to the threshold, then
+    /// rubber-banded, so the card keeps answering the finger past the point
+    /// where letting go would take it back.
+    private var liftOffset: CGFloat {
+        let span = SkinSelectSpec.liftThreshold
+        return liftDrag <= span ? liftDrag : span + (liftDrag - span) * 0.3
+    }
+
+    /// The card lies over the sheet whenever it is settled or on its way back.
+    private var cardOverSheet: Bool { confirmed || unsettling }
+
     var body: some View {
         GeometryReader { geo in
             let scale = max(geo.size.width / SkinSelectSpec.size.width,
@@ -187,6 +223,9 @@ struct SkinSelectScreen: View {
                 .clipped()
         }
         .ignoresSafeArea()
+        // The app runs dark, which makes the status bar white; that vanishes
+        // on the confirm sheet and on the light skins.
+        .preference(key: DarkStatusBar.self, value: darkStatusBar)
         .onAppear { start() }
         .onDisappear { hintTask?.cancel() }
     }
@@ -201,6 +240,12 @@ struct SkinSelectScreen: View {
             // hint sits on top and relies on `OnTexture` to stay legible over
             // whatever is fading past behind it.
             hint.zIndex(6)
+            // In front of every card layer — the stack (3, or 5 over the
+            // sheet), the dragged copy, the pocket and its glow (≤ 4.8) — so
+            // wherever the hand's path meets a card, the hand is on top.
+            // Only the confirm screen's own controls (7+) outrank it, and it
+            // is never up while they are.
+            coachHand.zIndex(6.1)
             // The card drops *behind* the sheet on the way in, and is presented
             // on top of it once it has settled — which also carries the
             // departing deck above the sheet, and that turns out to be what
@@ -215,8 +260,12 @@ struct SkinSelectScreen: View {
             // opacity change rides the settle spring, and for a third of a
             // second there are two of the same card at slightly different
             // points on two curves.
-            pocket.zIndex(confirmed ? 2 : 4)
-            cardStack.zIndex(confirmed ? 5 : 3)
+            pocket.zIndex(cardOverSheet ? 2 : 4)
+            // On the sheet, under the card.
+            confirmStage.zIndex(2.2)
+            confirmHeader.zIndex(2.3)
+            settledShadow.zIndex(cardOverSheet ? 4.95 : 2.5)
+            cardStack.zIndex(cardOverSheet ? 5 : 3)
             // Above the sheet, below the glow. The real card is behind the
             // pocket on the way in, so from the moment it crosses the mouth
             // there was nothing to see; this is the same card at the same
@@ -228,6 +277,7 @@ struct SkinSelectScreen: View {
             pocketGlow.zIndex(4.8)
             confirmCopy.zIndex(7)
             continueButton.zIndex(8)
+            backButton.zIndex(8.5)
             probe.zIndex(9)
         }
         .frame(width: SkinSelectSpec.size.width, height: SkinSelectSpec.size.height,
@@ -302,33 +352,45 @@ struct SkinSelectScreen: View {
         }
     }
 
-    /// Idle coaching: nudge the card the way it wants to be thrown, then the way
-    /// it wants to be pulled. Both play a fraction of the real transition so the
-    /// user sees the actual consequence, not a generic wiggle.
+    /// Idle coaching: the hand shows each gesture while the card plays a
+    /// fraction of its real transition, so what the user sees is the actual
+    /// consequence, not a generic wiggle. Up, to change, then down, to
+    /// confirm, each on the hand animation's own clock (`GestureHintTiming`):
+    /// the card starts with the finger's press, travels on the drag's curve,
+    /// and settles back as the finger lifts.
     private func scheduleHints() {
         hintTask?.cancel()
         guard tune.hintsEnabled else { return }
+        typealias T = GestureHintTiming
         hintTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(700))
-            while !Task.isCancelled {
-                guard !interacted, !confirmed else { return }
-                // 1 — how to cycle
-                withAnimation(.easeOut(duration: 0.42)) {
+            await GestureHintHand.preload()
+            func wait(_ s: Double) async -> Bool {
+                try? await Task.sleep(for: .milliseconds(Int(s * 1000)))
+                return !Task.isCancelled && !interacted && !confirmed
+            }
+            defer { coach = nil }
+            guard await wait(0.7) else { return }
+            while true {
+                // 1 — how to change
+                coach = .up; coachTick += 1
+                guard await wait(T.press) else { return }
+                withAnimation(T.dragCurve) {
                     advance = tune.hintCycleAmount
                     reveal = tune.hintCycleAmount
                 }
-                try? await Task.sleep(for: .milliseconds(560))
-                if Task.isCancelled || interacted { return }
-                withAnimation(.easeInOut(duration: 0.38)) { advance = 0; reveal = 0 }
-                try? await Task.sleep(for: .milliseconds(520))
-                if Task.isCancelled || interacted { return }
+                guard await wait(T.drag) else { return }
+                withAnimation(.easeInOut(duration: T.settle)) { advance = 0; reveal = 0 }
+                guard await wait(T.total - T.lift) else { return }
                 // 2 — how to confirm
-                withAnimation(.easeOut(duration: 0.38)) { hintPull = tune.hintPullAmount }
+                coach = .down; coachTick += 1
+                guard await wait(T.press) else { return }
+                withAnimation(T.dragCurve) { hintPull = tune.hintPullAmount }
                 Haptics.shared.selectionTick()
-                try? await Task.sleep(for: .milliseconds(480))
-                if Task.isCancelled || interacted { return }
-                withAnimation(.easeInOut(duration: 0.36)) { hintPull = 0 }
-                try? await Task.sleep(for: .seconds(tune.hintRepeat))
+                guard await wait(T.drag) else { return }
+                withAnimation(.easeInOut(duration: T.settle)) { hintPull = 0 }
+                guard await wait(T.total - T.lift) else { return }
+                withAnimation(.easeOut(duration: 0.2)) { coach = nil }
+                guard await wait(tune.hintRepeat) else { return }
             }
         }
     }
@@ -423,22 +485,55 @@ struct SkinSelectScreen: View {
             stepDots
                 .offset(x: SkinSelectSpec.stepDots.minX, y: SkinSelectSpec.stepDots.minY)
             VStack(spacing: 8) {
+                // `Skin Option 38` (1118:43902): 32pt ExtraBold, −0.25, and
+                // 16pt Medium, −0.15, 8pt under it.
                 Text("Pick your\nwallet skin")
                     .font(NoonFont.f(.extrabold, 32))
+                    .tracking(-0.25)
                     .multilineTextAlignment(.center)
                     .lineSpacing(2)
                 Text("Make your card uniquely yours")
-                    .font(NoonFont.f(.medium, 14))
-                    .opacity(0.75)
+                    .font(NoonFont.f(.medium, 16))
+                    .tracking(-0.15)
+                    // Dark type thins out faster than white at the same alpha.
+                    .opacity(0.75 + 0.1 * headerInk)
+                    // Through a pull the hint takes this line (`pullHintY`).
+                    .opacity(hintOnSubtitle ? 0 : 1)
+                    .animation(.easeOut(duration: HintLine.fadeOut), value: hintOnSubtitle)
             }
-            .foregroundStyle(SkinSelectSpec.Palette.onTexture)
-            .modifier(OnTexture())
+            .foregroundStyle(inkColor(headerInk))
+            .modifier(OnTexture(dark: headerInk))
             .frame(width: SkinSelectSpec.titleBox.width)
+            // Grows to the confirm title's size with the settle, so the hand
+            // over to the dark type is one title changing colour, not two.
+            .scaleEffect(titleScale, anchor: .top)
             .offset(x: SkinSelectSpec.titleBox.minX, y: SkinSelectSpec.titleBox.minY)
         }
         .opacity((dealt ? 1 : 0) * (1 - 0.85 * headerDim))
         .offset(y: dealt ? 0 : -14)
         .allowsHitTesting(false)
+    }
+
+    /// 0…1 — the title's morph from the picker's to the confirm screen's:
+    /// on the settle spring, back with the lift.
+    private var titleMorph: CGFloat { confirmed ? CGFloat(1 - lift) : 0 }
+
+    /// The white title's scale, 1 to 40/32.
+    private var titleScale: CGFloat { 1 + (SkinConfirmSpec.titleGrowth - 1) * titleMorph }
+
+    /// The confirm screen's dark type, masked to the sheet: wherever the sheet
+    /// is under the title it is dark, wherever the backdrop is it is the
+    /// picker's white one below the sheet. The two sit at the same size
+    /// (`titleScale`), so the sheet's edge is the only line between them.
+    private var confirmHeader: some View {
+        SkinConfirmHeader(scale: titleScale / SkinConfirmSpec.titleGrowth)
+            .mask(alignment: .topLeading) {
+                PocketShape()
+                    .frame(width: SkinSelectSpec.sheetWidth,
+                           height: SkinSelectSpec.size.height + 200)
+                    .offset(x: (SkinSelectSpec.size.width - SkinSelectSpec.sheetWidth) / 2,
+                            y: sheetTop)
+            }
     }
 
     /// 0…1 — how much the thrown card is in the header's way.
@@ -454,29 +549,110 @@ struct SkinSelectScreen: View {
     private var headerDim: Double {
         // Only the upward throw is in the title's way; a sideways one leaves
         // across the middle of the screen and never reaches it.
-        guard tune.cycleAxis == .up else { return 0 }
-        return advance * (1 - tuck)
+        // The settled card, drawn back up, climbs toward the title too.
+        let lifting = lift * 0.7
+        guard tune.cycleAxis == .up else { return lifting }
+        return max(lifting, advance * (1 - tuck))
     }
 
     private var stepDots: some View {
-        HStack(spacing: 4) {
+        let ink = inkColor(headerInk)
+        // The upcoming steps: 45% white reads on the dark skins, but dark ink
+        // needs less to show and more would look like the current step.
+        let idle = ink.opacity(0.45 - 0.13 * headerInk)
+        return HStack(spacing: 4) {
             ForEach(0..<3) { i in
                 Circle()
-                    .strokeBorder(.white, lineWidth: i == 0 ? 4 : 0)
-                    .background(Circle().fill(i == 0 ? .clear : .white.opacity(0.45)))
+                    .strokeBorder(ink, lineWidth: i == 0 ? 4 : 0)
+                    .background(Circle().fill(i == 0 ? .clear : idle))
                     .frame(width: 16, height: 16)
                 if i < 2 {
-                    Capsule().fill(.white.opacity(0.45)).frame(width: 24, height: 4)
+                    Capsule().fill(idle).frame(width: 24, height: 4)
                 }
             }
         }
+        .modifier(OnTexture(dark: headerInk))
         .frame(width: SkinSelectSpec.stepDots.width, height: SkinSelectSpec.stepDots.height)
+    }
+
+    // MARK: ink
+    //
+    // The header, dots and hint were white, full stop — right on the design's
+    // own dark skins, and unreadable on the seven light ones (bg_03, 06, 07,
+    // 10, 14, 15, 22), where white under the title measures a contrast of
+    // 1.7…2.7. Each backdrop is measured under where the type sits and the
+    // type goes dark where the palette's ink would out-contrast white — the
+    // wallet page's rule, `WalletInk`. Measured once, under the title, and
+    // followed by everything else on the backdrop — the dots, the hint and
+    // the hand — so the screen's type is always one colour.
+
+    /// Under the title block (y 70…195, x 60…315), as fractions of the art:
+    /// 1461 × 2424, filled to 375 × 812, which crops its sides to
+    /// 0.117…0.883. The hint and the dots take the same answer.
+    private static let headerBand = WalletInk.Band(top: 0.086, bottom: 0.24, left: 0.24, right: 0.76)
+    /// The status bar's strip, for which way it goes.
+    private static let statusBand = WalletInk.Band(top: 0, bottom: 0.065, left: 0.12, right: 0.88)
+
+    private func dark(_ slot: Int, _ band: WalletInk.Band) -> Double {
+        let name = String(format: "bg_%02d", SkinSelectSpec.asset(at: slot))
+        return WalletInk.prefersDarkInk(name, in: band) == true ? 1 : 0
+    }
+
+    /// 0 white … 1 dark for type at stage height `y`, carried through the
+    /// background change: with the crossfade it follows `reveal`, with the arc
+    /// it turns as the arc's edge passes the type.
+    private func ink(_ band: WalletInk.Band, atY y: CGFloat) -> Double {
+        let a = dark(index, band), b = dark(nextIndex, band)
+        guard a != b else { return a }
+        let t: Double
+        switch tune.bgStyle {
+        case .crossfade:
+            t = reveal
+        case .arc:
+            // `background`'s arc reaches y once its radius passes the
+            // distance from its centre, H + depth − y.
+            let H = SkinSelectSpec.size.height, depth = CGFloat(tune.arcDepth)
+            let at = Double((H - y) / (H + depth * 0.15))
+            let u = min(1, max(0, (reveal - (at - 0.05)) / 0.1))
+            t = u * u * (3 - 2 * u)
+        }
+        return a + (b - a) * t
+    }
+
+    private var headerInk: Double { ink(Self.headerBand, atY: 150) }
+    /// The hint follows the header. It was measured on its own, under
+    /// itself — and on a backdrop that is lighter low down, like the orange
+    /// weave, it went dark under a white title, which read as two colour
+    /// schemes on one screen. The header's is the one to follow: it is the
+    /// screen's type, and the hint is one more line of it.
+    private var hintInk: Double { headerInk }
+    private var darkStatusBar: Bool {
+        // `stageShown`, not `confirmed`: the confirm screen is only under the
+        // status bar once the sheet has covered it, and on release the
+        // backdrop is still there.
+        if confirmed { return stageShown }
+        return ink(Self.statusBand, atY: 20) > 0.5
+    }
+
+    /// White to the palette's ink.
+    private func inkColor(_ k: Double) -> Color {
+        let k = min(1, max(0, k))
+        return Color(.sRGB, red: 1 - (1 - 0x10 / 255.0) * k,
+                     green: 1 - (1 - 0x16 / 255.0) * k,
+                     blue: 1 - (1 - 0x28 / 255.0) * k)
     }
 
     // MARK: pocket
 
     private var sheetTop: CGFloat {
-        if confirmed { return SkinSelectSpec.settledTop }
+        // Settled, the sheet goes on past the design's 242 to cover the whole
+        // screen — the confirm screen is printed on it (`SkinConfirmStage`).
+        // Drawn back up, it falls away toward where it used to settle.
+        if confirmed {
+            let cover = SkinConfirmSpec.coverTop
+            let down = SkinSelectSpec.settledTop + SkinSelectSpec.liftSheetSink
+            return cover + (down - cover) * CGFloat(lift)
+        }
         return SkinSelectSpec.restTop
             + (SkinSelectSpec.dragTop - SkinSelectSpec.restTop) * CGFloat(easeOut(pull))
     }
@@ -489,7 +665,7 @@ struct SkinSelectScreen: View {
     /// card lighting it. Out again the moment the card commits: the glow is
     /// the anticipation of the drop, so it has no business burning under a
     /// settled card.
-    private var glow: Double { confirmed ? 0 : contact }
+    private var glow: Double { cardOverSheet ? 0 : contact }
 
     /// 0…1 — how far the card's bottom edge is past the notch floor, over two
     /// notch depths of engagement.
@@ -594,10 +770,59 @@ struct SkinSelectScreen: View {
             // fill is already this path, so clipping costs it nothing.
             .overlay(alignment: .top) { dropTarget }
             .clipShape(PocketShape())
-            // The new shape's own filter: dy −8, blur 12, black at 12%.
-            .shadow(color: .black.opacity(0.12), radius: 12, y: -8)
+            // The shape's own filter (1027:18114): dy −20, blur 12, black
+            // at 16%.
+            .shadow(color: .black.opacity(0.16), radius: 12, y: -20)
             .offset(x: (SkinSelectSpec.size.width - SkinSelectSpec.sheetWidth) / 2, y: sheetTop)
             .allowsHitTesting(false)
+    }
+
+    /// The confirm screen's layers, fixed to the screen over the sheet.
+    ///
+    /// They used to be printed on the sheet and ride it, which put the whole
+    /// design on screen travelling up with the rise, and on the way back left
+    /// the wash's top edge as a hard line across a sinking sheet. Now the
+    /// sheet moves on its own — plain white, the one base — and these fade in
+    /// where they belong once it has settled over the whole screen, and out
+    /// before it moves again. See `stageShown`.
+    private var confirmStage: some View {
+        SkinConfirmStage(skin: skins[index], tint: tune.confirmTint, live: confirmed)
+            .opacity(stageShown ? 1 : 0)
+    }
+
+    /// The settled card's drop shadow, from the design's hero card: five
+    /// stacked shadows in a near-black green, of which four are visible.
+    ///
+    /// A silhouette of the card behind it rather than `.shadow` on the card
+    /// itself — the card is one of 22 in a `ForEach`, and a shadow applied
+    /// there is paid for by every card whether it shows or not.
+    private var settledShadow: some View {
+        let ink = Color(red: 0.0157, green: 0.0706, blue: 0.0431)
+        let layers: [(y: CGFloat, blur: CGFloat, a: Double)] = [
+            (8.275, 18.618, 0.10), (33.098, 33.098, 0.09),
+            (75.505, 45.510, 0.05), (134.461, 53.785, 0.01),
+        ]
+        let silhouette = Image(skins[index])
+            .resizable()
+            .renderingMode(.template)
+            .interpolation(.medium)
+            .scaledToFit()
+            .foregroundStyle(ink)
+            .frame(width: SkinSelectSpec.settledCardWidth)
+        return ZStack {
+            ForEach(layers.indices, id: \.self) { i in
+                silhouette
+                    .blur(radius: layers[i].blur / 2)
+                    .offset(y: layers[i].y)
+                    .opacity(layers[i].a)
+            }
+        }
+        .scaleEffect(frontScale)
+        .offset(y: frontDrop)
+        .frame(width: SkinSelectSpec.size.width, height: SkinSelectSpec.size.height)
+        .offset(y: SkinSelectSpec.cardCenterY - SkinSelectSpec.size.height / 2)
+        .opacity(confirmed && settleBounce ? 1 - lift : 0)
+        .allowsHitTesting(false)
     }
 
     /// The lit mouth, on its own layer above the card copy.
@@ -680,7 +905,7 @@ struct SkinSelectScreen: View {
             .mask(MouthWindow.gradient(width: SkinSelectSpec.sheetWidth,
                                        span: mouthSpan))
             .opacity(SkinSelectSpec.mouthShadowOpacity
-                     * (confirmed ? 0 : shadowFade))
+                     * (cardOverSheet ? 0 : shadowFade))
             .animation(.easeOut(duration: 0.3), value: confirmed)
             .offset(x: (SkinSelectSpec.size.width - SkinSelectSpec.sheetWidth) / 2,
                     y: sheetTop - head)
@@ -735,50 +960,31 @@ struct SkinSelectScreen: View {
             .allowsHitTesting(false)
     }
 
-    /// The dashed outline the card drops into — `Rectangle 1891598615`.
-    ///
-    /// `.stroke`, not `.strokeBorder`: the design specifies Position: Center,
-    /// and `strokeBorder` would inset the line by half its width.
+    /// The tray the card drops into — Figma `Grid` (1118:44289); see
+    /// `SkinDropGrid` for the layers and the motion.
     private var dropTarget: some View {
-        // Both the stroke and the fill come from the card being dragged, so
-        // the outline belongs to the skin you are choosing rather than being
-        // green on all twenty-two. The design's 006B3B is the green-leather
-        // card's own colour — `SkinPalette.ink` is calibrated against exactly
-        // that value, so skin 19 still lands on it.
+        // The colour comes from the card being dragged, so the tray belongs
+        // to the skin you are choosing rather than being green on all
+        // twenty-two. The design's 006B3B is the green-leather card's own
+        // colour — `SkinPalette.ink` is calibrated against exactly that value.
         let ink = SkinPalette.ink(for: skins[index])
         let box = SkinSelectSpec.dropTargetSize(for: skins[index])
-        // Radius read off the card, and **circular**. The flat 22 was under
-        // almost every skin — two thirds of the lego card's 33.6 — and
-        // `.continuous` compounded it: a squircle sits much closer to the
-        // corner at the 45° point than a circular arc of the same radius, so
-        // the dashes bulged past the card's rounding at exactly the four
-        // places the eye checks. Fitting the artwork offline puts these
-        // corners at n ≈ 1.8…2.0, which is circular.
+        // Radius read off the card, and **circular**: fitting the artwork
+        // offline puts its corners at n ≈ 1.8…2.0, which is circular, and a
+        // squircle of the same radius bulges past the card at the corners.
         let radius = SkinArt.cornerRadius(skins[index], at: box.width)
-        return RoundedRectangle(cornerRadius: radius, style: .circular)
-            .fill(ink.opacity(0.10))
-            .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .circular)
-                    // Butt cap and a mitre join, per the designer's stroke
-                    // panel — at 1pt over a 22pt continuous corner neither is
-                    // really visible, but they are what the panel says.
-                    .stroke(ink,
-                            style: StrokeStyle(lineWidth: SkinSelectSpec.dropStrokeWidth,
-                                               lineCap: .butt,
-                                               lineJoin: .miter,
-                                               dash: [SkinSelectSpec.dropDash,
-                                                      SkinSelectSpec.dropDash]))
-            }
-            .frame(width: box.width, height: box.height)
+        return SkinDropGrid(ink: ink, size: box, radius: radius,
+                            // Uncovered over the first 70% of the pull, so
+                            // it is whole a little before the commit point.
+                            reveal: min(1, max(0, pull / 0.7)),
+                            armed: pull >= Double(SkinSelectSpec.commitFraction),
+                            absorbed: cardOverSheet)
             // The pocket view is offset to `sheetTop`, so this converts the
-            // outline's fixed screen position into the sheet's own coordinates.
+            // tray's fixed screen position into the sheet's own coordinates.
             // Above the mouth it lands outside the clip and simply is not
-            // drawn. Centred rather than top-aligned, since the height now
+            // drawn. Centred rather than top-aligned, since the height
             // follows the skin.
             .offset(y: SkinSelectSpec.dropCenterY - box.height / 2 - sheetTop)
-            // Out on commit: the card lands on top of it, and a dashed outline
-            // under a settled card reads as a mistake.
-            .opacity(confirmed ? 0 : 1)
             .allowsHitTesting(false)
     }
 
@@ -816,6 +1022,24 @@ struct SkinSelectScreen: View {
         // Behind the pocket while the card is being pulled in; in front of it
         // once the sheet has settled and the card is presented on top.
         .allowsHitTesting(false)
+    }
+
+    /// 0…1 — the deck's exit as the pull goes, for the card at `slot`.
+    ///
+    /// The exit used to start on release, which left the deck ghosting over
+    /// the sheet as it rose to cover the screen — the leftovers were still
+    /// half there when the confirm screen arrived. It now runs over the
+    /// pull, 0.30 → the commit point, so by the time letting go can confirm
+    /// the deck has left; pulled back, it returns with the finger. The start
+    /// clears the idle coaching's 0.13 nudge, which must not send the deck
+    /// off. Back cards lead, as in `exitDelay`, and for the same reason.
+    private func pullExit(slot s: Int) -> Double {
+        guard axisLock == .confirm || confirmed else { return 0 }
+        let fromBack = Double(SkinSelectSpec.visibleDepth - min(s, SkinSelectSpec.visibleDepth))
+        let start = 0.30 - 0.04 * fromBack
+        let end = Double(SkinSelectSpec.commitFraction) - 0.04 * fromBack
+        let u = min(1, max(0, (pull - start) / (end - start)))
+        return u * u * (3 - 2 * u)
     }
 
     /// When a card left behind in the stack starts its exit.
@@ -860,8 +1084,10 @@ struct SkinSelectScreen: View {
         // the deal-in — offset, scale, fade — pointed the other way: up and
         // out, so the deck looks like it is being lifted off the chosen card.
         //
-        // Driven by `exitDrive`, which the selection sets, not by the pull.
-        let exit = isFront ? 0 : exitDrive
+        // Driven by the pull itself (`pullExit`), so the deck is gone before
+        // the sheet takes the screen; `exitDrive`, which the selection sets,
+        // finishes it off after a flick too fast for the pull to have.
+        let exit = isFront ? 0 : max(exitDrive, pullExit(slot: s))
         let exitDy = -SkinSelectSpec.exitLift * CGFloat(exit)
         let exitScale = 1 - SkinSelectSpec.exitShrink * CGFloat(exit)
 
@@ -903,7 +1129,9 @@ struct SkinSelectScreen: View {
         // The settled card springs up *from* the size it seated at rather than
         // from a flat 0.55 — now that the seat is an exact fit to the outline,
         // starting anywhere else puts a shrink in front of the hero bounce.
-        if confirmed { return settleBounce ? 1 : SkinSelectSpec.dropFitScale }
+        // Drawn back up, it gives up a little of its hero size on the way —
+        // the start of shrinking back to the deck's width.
+        if confirmed { return (settleBounce ? 1 : SkinSelectSpec.dropFitScale) * (1 - 0.06 * CGFloat(lift)) }
         // Finished by the time the card reaches the mouth, not at the end of
         // the travel. Spread over the whole seat the card was still 248 wide
         // as it entered a 241pt notch — visibly wider than the hole it was
@@ -944,7 +1172,7 @@ struct SkinSelectScreen: View {
 
     private var frontDrop: CGFloat {
         if confirmed {
-            return SkinSelectSpec.settledCardCenterY - SkinSelectSpec.cardCenterY
+            return SkinSelectSpec.settledCardCenterY - SkinSelectSpec.cardCenterY - liftOffset
         }
         return SkinSelectSpec.dropTravel * CGFloat(seat)
     }
@@ -953,43 +1181,79 @@ struct SkinSelectScreen: View {
     // MARK: confirm copy
 
     private var confirmCopy: some View {
-        VStack(spacing: 10) {
-            Text("Confirm?").font(NoonFont.f(.extrabold, 34))
-            Text("Finalise wallet skin").font(NoonFont.f(.medium, 16)).opacity(0.6)
+        // Figma `Skin Option 38` (1118:43902): 32pt ExtraBold in black on a
+        // 50pt line, and 4pt under it 14pt Medium at 80% on a 27.5pt line.
+        VStack(spacing: 4) {
+            Text("Keep this skin?").font(NoonFont.f(.extrabold, 32)).tracking(-0.3125)
+                .fixedSize()
+                .frame(height: 50)
+            Text("You can’t change it once confirmed.").font(NoonFont.f(.medium, 14)).tracking(-0.1875)
+                .fixedSize()
+                .opacity(0.8)
+                .frame(height: 27.5)
         }
-        .foregroundStyle(SkinSelectSpec.Palette.ink)
-        .frame(width: SkinSelectSpec.confirmTitle.width)
-        .offset(x: SkinSelectSpec.confirmTitle.minX, y: SkinSelectSpec.confirmTitle.minY)
-        .opacity(confirmed && settleBounce ? 1 : 0)
+        .foregroundStyle(.black)
+        // Both lines run wider than the design's 271pt box, so they are
+        // centred on its centre line over the full stage instead of wrapping.
+        .frame(width: SkinSelectSpec.size.width)
+        .offset(x: SkinSelectSpec.confirmTitle.midX - SkinSelectSpec.size.width / 2,
+                y: SkinSelectSpec.confirmTitle.minY)
+        .opacity(confirmed && settleBounce ? 1 - lift : 0)
         .allowsHitTesting(false)
     }
 
     private var continueButton: some View {
         Button {
-            Haptics.shared.tap()
             if let onContinue {
                 onContinue()
             } else {
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) { reset() }
             }
         } label: {
-            Text("Continue")
+            Text("Confirm skin")
                 .font(NoonFont.f(.semibold, 16))
                 .foregroundStyle(.white)
                 .frame(width: SkinSelectSpec.continueBtn.width,
                        height: SkinSelectSpec.continueBtn.height)
-                .background(SkinSelectSpec.Palette.ink)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
-        .buttonStyle(.plain)
+        // The app's primary button, which brings its own haptic.
+        .buttonStyle(DomeButtonStyle())
         .disabled(!confirmed)
         .accessibilityIdentifier("skinContinue")
         .offset(x: SkinSelectSpec.continueBtn.minX, y: SkinSelectSpec.continueBtn.minY)
         // Only once a card is actually chosen. It used to arm gradually through
         // the pull, which put a half-lit disabled button on screen for the
         // whole gesture — something to look at that could not be pressed.
-        .opacity(confirmed ? 1 : 0)
+        .opacity(confirmed ? 1 - lift : 0)
         .animation(.easeOut(duration: 0.22), value: confirmed)
+    }
+
+    /// Back to the deck, once a card has settled — the same as drawing the
+    /// card back up out of the pocket.
+    private var backButton: some View {
+        Button { unsettle() } label: {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 15, weight: .semibold))
+                // Only ever shown on the white confirm screen: the step
+                // dots' greys.
+                .foregroundStyle(SkinConfirmSpec.grey800)
+                .frame(width: SkinSelectSpec.backButton.width,
+                       height: SkinSelectSpec.backButton.height)
+                // White rather than the design's grey 300, which is 1.1:1
+                // against the wash and left the button a ghost.
+                .background(Circle().fill(.white)
+                    .shadow(color: .black.opacity(0.1), radius: 4, y: 1))
+                .contentShape(Circle())
+        }
+        .buttonStyle(PressDip())
+        .accessibilityLabel("Back")
+        .accessibilityIdentifier("skinBack")
+        .offset(x: SkinSelectSpec.backButton.minX, y: SkinSelectSpec.backButton.minY)
+        .opacity(confirmed && settleBounce ? 1 - lift : 0)
+        .scaleEffect(confirmed && settleBounce ? 1 : 0.8, anchor: .center)
+        .animation(.easeOut(duration: 0.22), value: confirmed)
+        .animation(.easeOut(duration: 0.22), value: settleBounce)
+        .allowsHitTesting(confirmed && !unsettling)
     }
 
     // MARK: hint
@@ -1004,30 +1268,34 @@ struct SkinSelectScreen: View {
 
     private enum HintPhase {
         case idle, throwing, throwArmed, pulling, pullArmed
+        /// Settled: the card can be drawn back up to choose again.
+        case settled, lifting, liftArmed
 
+        /// What the gesture under way does — named, while the card moves,
+        /// by the direction it is moving in, and "Release to …" from the
+        /// point where letting go will do it.
         func text(sideways: Bool) -> String {
             switch self {
             case .idle:       sideways ? "Swipe to change" : "Swipe up to change"
-            case .throwing:   "Keep going"
+            case .throwing:   sideways ? "Swipe to change" : "Swipe up to change"
             case .throwArmed: "Release to change"
-            case .pulling:    "Keep pulling"
+            case .pulling:    "Drag down to confirm"
             case .pullArmed:  "Release to confirm"
+            case .settled:    "Drag up to change"
+            case .lifting:    "Drag up to change"
+            case .liftArmed:  "Release to change"
             }
         }
 
-        func glyph(sideways: Bool) -> String? {
-            switch self {
-            case .idle, .throwing: sideways ? "‹ ›" : "︿"
-            case .pulling:         "︾"
-            case .throwArmed, .pullArmed: nil
-            }
-        }
-
-        var armed: Bool { self == .throwArmed || self == .pullArmed }
+        var armed: Bool { self == .throwArmed || self == .pullArmed || self == .liftArmed }
     }
 
     private var hintPhase: HintPhase {
         let commit = Double(SkinSelectSpec.commitFraction)
+        if confirmed {
+            if liftDrag < 2 { return .settled }
+            return lift >= Double(SkinSelectSpec.liftCommit) ? .liftArmed : .lifting
+        }
         switch axisLock {
         case .cycle:   return advance >= commit ? .throwArmed : .throwing
         case .confirm: return pull >= commit ? .pullArmed : .pulling
@@ -1044,34 +1312,82 @@ struct SkinSelectScreen: View {
     /// the gesture. Riding just above the sheet does not help either, because
     /// the card is above the sheet.
     ///
-    /// The band from roughly 240 to 370 is clear for the whole pull, so the
-    /// hint moves up there instead and stays put. The throw needs no such
-    /// treatment: the card leaves 579 rather than crossing it.
-    private static let pullHintY: CGFloat = 300
+    /// It used to move up to 300, the band that was clear of the whole pull
+    /// — until the deck started leaving *with* the pull (`pullExit`): the
+    /// cards lift 112pt as they go, straight through 300, so the words sat
+    /// on the stack. It now takes the subtitle's own line, at 200, and the
+    /// subtitle makes way. The deck's top edge doesn't reach 222 until it
+    /// is four fifths faded. The throw needs no such treatment: the card
+    /// leaves 579 rather than crossing it.
+    private static let pullHintY: CGFloat = SkinSelectSpec.subtitle.minY
+
+    /// Settled, the hint is on the white sheet, between the confirm copy and
+    /// Continue — clear of the card however far it is drawn up.
+    private static let settledHintY: CGFloat = 688
 
     private var hintY: CGFloat {
-        hintPhase == .pulling || hintPhase == .pullArmed ? Self.pullHintY : SkinSelectSpec.hintY
+        switch hintPhase {
+        case .pulling, .pullArmed: Self.pullHintY
+        case .settled, .lifting, .liftArmed: Self.settledHintY
+        default: SkinSelectSpec.hintY
+        }
     }
 
+    /// The hint line: plain type, saying what the gesture does.
+    ///
+    /// At rest it follows the idle coaching — "Swipe up to change" while the
+    /// card is nudged up, "Drag down to confirm" while it is nudged down —
+    /// and during a real gesture it follows that, turning to "Release to …"
+    /// at the commit point, the moment of the `armed()` haptic. (A pill
+    /// with a progress bar did this for a while; it was heavy, and the hand
+    /// animation carries the coaching now.)
     private var hint: some View {
         let phase = hintPhase
         let sideways = tune.cycleAxis == .side
-        return HStack(spacing: 6) {
-            Text(phase.text(sideways: sideways))
-                .font(NoonFont.f(phase.armed ? .semibold : .medium, 15))
-                .contentTransition(.opacity)
-            if let glyph = phase.glyph(sideways: sideways) {
-                Text(glyph).font(.system(size: 13, weight: .bold)).opacity(0.7)
-            }
+        let text = phase == .idle && coach != nil ? coach!.text : phase.text(sideways: sideways)
+        let onSheet = confirmed
+        let ink = onSheet ? SkinSelectSpec.Palette.ink.opacity(phase.armed ? 0.85 : 0.6)
+                          : inkColor(hintInk).opacity(phase.armed ? 1 : 0.92)
+        return HintLine(text: text, y: hintY, weight: phase.armed ? .semibold : .medium,
+                        ink: ink, onTexture: !onSheet, dark: hintInk)
+            .frame(width: SkinSelectSpec.size.width, alignment: .top)
+            // Not shown once a card is confirmed: the line above Confirm skin
+            // was taken out, and the title's subtitle now says how to go
+            // back ("Swipe up or go back to try another").
+            .opacity(!dealt || confirmed ? 0 : 1)
+            .allowsHitTesting(false)
+    }
+
+    /// The pull's hint is on the subtitle's line.
+    private var hintOnSubtitle: Bool { hintPhase == .pulling || hintPhase == .pullArmed }
+
+    /// The hand, on the front card, while the idle coaching plays a gesture:
+    /// the finger presses on the card and drags it, and the card moves with
+    /// it (`scheduleHints` nudges it on the finger's clock) — the gesture
+    /// shown where it is actually made. Under the hint line it read as a
+    /// separate illustration below the stack.
+    ///
+    /// The front card spans y 349…539. `down` presses at 400 and ends at
+    /// 490, riding the card as it dips toward the pocket; `up` presses near
+    /// its foot, 520, and ends at 430 as the card lifts. The track is centred
+    /// on the card, which is centred on the screen.
+    private static let handDownStart: CGFloat = SkinSelectSpec.cardCenterY - 44
+    private static let handUpStart: CGFloat = SkinSelectSpec.cardCenterY + 76
+
+    @ViewBuilder
+    private var coachHand: some View {
+        if let g = coach, !confirmed, !(g == .up && tune.cycleAxis == .side) {
+            // Where the design frame's top goes: the finger starts 12pt into
+            // the frame for `down`, and 12pt from its foot (180.6) for `up`.
+            let frameTop: CGFloat = g == .down ? Self.handDownStart - 12
+                                               : Self.handUpStart - (180.613 - 12)
+            GestureHintHand(gesture: g, tick: coachTick)
+                .modifier(OnTexture(dark: hintInk))
+                .offset(x: SkinSelectSpec.size.width / 2
+                            - (GestureHintHand.frameOrigin.x + GestureHintHand.trackX),
+                        y: frameTop - GestureHintHand.frameOrigin.y)
+                .transition(.opacity)
         }
-        .foregroundStyle(.white.opacity(phase.armed ? 1 : 0.85))
-        .modifier(OnTexture())
-        .frame(width: SkinSelectSpec.size.width)
-        .offset(y: hintY)
-        .opacity(dealt && !confirmed ? 1 : 0)
-        .animation(.easeOut(duration: 0.14), value: phase)
-        .animation(.spring(response: 0.34, dampingFraction: 0.86), value: hintY)
-        .allowsHitTesting(false)
     }
 
     // MARK: gesture
@@ -1085,8 +1401,8 @@ struct SkinSelectScreen: View {
     /// Shared by the real gesture and the scripted driver, so the replay
     /// exercises the same code — including the haptics.
     private func handleDrag(_ translation: CGSize) {
-        guard !confirmed else { return }
-        if !interacted { interacted = true; hintTask?.cancel(); hintPull = 0 }
+        if confirmed { handleLift(translation); return }
+        if !interacted { interacted = true; hintTask?.cancel(); hintPull = 0; coach = nil }
         drag = translation
         let sideways = tune.cycleAxis == .side
         let throwReach = sideways ? abs(translation.width) : max(0, -translation.height)
@@ -1164,7 +1480,7 @@ struct SkinSelectScreen: View {
     }
 
     private func endDrag(_ translation: CGSize) {
-        guard !confirmed else { return }
+        if confirmed { endLift(translation); return }
         Haptics.shared.stopRamp()
         cycleDetent = 0
         armedThrow = false
@@ -1173,16 +1489,24 @@ struct SkinSelectScreen: View {
         let throwReach = sideways ? abs(translation.width) : max(0, -translation.height)
         let commit = SkinSelectSpec.commitFraction
         let locked = axisLock
-        axisLock = nil
+        // `axisLock` is cleared inside each outcome's own transaction, not
+        // here. The deck's exit reads it (`pullExit`), and `withAnimation`
+        // commits whatever is pending as an update of its own first — so a
+        // lock cleared out here rendered one frame with the pull no longer
+        // counting and nothing confirmed yet: the deck snapped back into the
+        // stack, then left all over again.
         // Resolved on the axis the drag committed to, not by re-reading the
         // translation: a diagonal release could otherwise satisfy both.
         if locked == .confirm, translation.height > confirmSpan * commit {
             settle()
         } else if locked == .cycle, throwReach > cycleSpan * commit {
+            axisLock = nil
             cycle()
         } else {
             Haptics.shared.aborted()
+            // The deck rides the same spring back in.
             withAnimation(.spring(response: abortResponse, dampingFraction: 0.78)) {
+                axisLock = nil
                 drag = .zero; advance = 0; reveal = 0; tuck = 0
             }
         }
@@ -1240,17 +1564,24 @@ struct SkinSelectScreen: View {
     }
 
     private func settle() {
+        // The deck has already left with the pull (`pullExit`); this holds it
+        // gone, and finishes the exit after a flick too fast to have run it.
+        // Set first, so it is part of the update `withAnimation` flushes.
+        exitDrive = 1
         withAnimation(.spring(response: 0.42, dampingFraction: 0.88)) {
+            axisLock = nil
             confirmed = true
             drag = .zero
             advance = 0
             reveal = 0
             tuck = 0
         }
+        // The colour and the rays come up as the sheet closes over the top
+        // of the screen — 0.2s into the spring it is nine tenths of the way —
+        // not when the spring has finished creeping the last few points,
+        // which read as late.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.showStage() }
         Haptics.shared.settle()
-        // The deck leaves now, not during the pull — one beat, on its own
-        // clock, with the per-card stagger applied in `card(_:)`.
-        exitDrive = 1
         // The reveal: the card is hidden behind the sheet at the moment it
         // settles, then springs up on top of it.
         withAnimation(.spring(response: 0.5, dampingFraction: 0.58).delay(0.12)) {
@@ -1258,8 +1589,81 @@ struct SkinSelectScreen: View {
         }
     }
 
+    // MARK: back out of the pocket
+
+    /// The settled card follows the finger back up; nothing else moves until
+    /// it is let go.
+    private func handleLift(_ translation: CGSize) {
+        guard settleBounce, !unsettling else { return }
+        liftDrag = max(0, -translation.height)
+        if liftDrag > 1 { hideStage() }
+        let armedNow = lift >= Double(SkinSelectSpec.liftCommit)
+        if armedNow != armedLift {
+            armedLift = armedNow
+            if armedNow { Haptics.shared.armed() } else { Haptics.shared.selectionTick() }
+        }
+    }
+
+    private func endLift(_ translation: CGSize) {
+        guard settleBounce, !unsettling else { return }
+        let commit = lift >= Double(SkinSelectSpec.liftCommit)
+        armedLift = false
+        if commit {
+            unsettle()
+        } else {
+            if liftDrag > 2 { Haptics.shared.aborted() }
+            withAnimation(.interpolatingSpring(stiffness: 320, damping: 28),
+                          completionCriteria: .logicallyComplete) {
+                liftDrag = 0
+            } completion: {
+                // Back in place: the screen returns once the sheet is still.
+                showStage()
+            }
+        }
+    }
+
+    /// The reverse of `settle`: the card rises off the sheet back to the
+    /// front of the deck, the sheet falls away and the deck comes back down
+    /// behind it.
+    private func unsettle() {
+        guard confirmed, !unsettling else { return }
+        Haptics.shared.swipe()
+        unsettling = true
+        transitioning = true
+        hideStage()
+        armedLift = false
+        // The deck returns on its own clock, with the exit's stagger.
+        exitDrive = 0
+        withAnimation(.interpolatingSpring(stiffness: 320, damping: 28),
+                      completionCriteria: .logicallyComplete) {
+            confirmed = false
+            settleBounce = false
+            liftDrag = 0
+            drag = .zero
+        } completion: {
+            unsettling = false
+            transitioning = false
+            resumeHintsIfIdle()
+        }
+    }
+
+    /// The confirm screen's layers, in and out. Fast out — they must be gone
+    /// before the sheet has moved far — and a softer fade in.
+    private func showStage() {
+        guard confirmed, !unsettling, liftDrag < 1, !stageShown else { return }
+        withAnimation(.easeOut(duration: 0.28)) { stageShown = true }
+    }
+
+    private func hideStage() {
+        guard stageShown else { return }
+        withAnimation(.easeOut(duration: 0.12)) { stageShown = false }
+    }
+
     private func reset() {
         axisLock = nil
+        stageShown = false
+        liftDrag = 0
+        unsettling = false
         crossTalk = false
         confirmed = false
         settleBounce = false
@@ -1360,10 +1764,25 @@ struct SkinSelectScreen: View {
             }
         }
         at(7.1 + lead) { self.endDrag(CGSize(width: 0, height: down)) }
+        if liftDemo {
+            // Draw the settled card back up out of the pocket, and let go.
+            let up = SkinSelectSpec.liftThreshold * 0.9
+            for i in 0...20 {
+                at(8.4 + lead + Double(i) * 0.03) {
+                    self.handleDrag(CGSize(width: 0, height: -CGFloat(i) / 20 * up))
+                }
+            }
+            at(9.2 + lead) { self.endDrag(CGSize(width: 0, height: -up)) }
+            return
+        }
         // Hosted in the onboarding flow, carry on through Continue so the
         // hand-off to the next step is exercised too.
         at(9.0 + lead) { self.onContinue?() }
     }
+
+    /// `-skinDemo -skinLift` ends the demo by lifting the chosen card back
+    /// out of the pocket instead of pressing Continue.
+    private var liftDemo: Bool { ProcessInfo.processInfo.arguments.contains("-skinLift") }
 }
 
 /// Keeps white type legible over any of the 22 backdrops.
@@ -1378,11 +1797,75 @@ struct SkinSelectScreen: View {
 /// Two shadows instead: a tight one to give each glyph an edge, a wider soft
 /// one for the mass. Black shadows are invisible on a dark backdrop, so this
 /// costs the other nineteen nothing.
+/// The hint's one line of type, changing in sequence.
+///
+/// A crossfade — `contentTransition(.opacity)` — drew the old words and the
+/// new on top of each other for its whole length, and when the line also
+/// moved (up to the subtitle for a pull) the two slid past each other. Now
+/// the old line fades out, the words and the place change while nothing is
+/// showing, and the new line fades in. A change that lands mid-fade just
+/// retargets: whatever is newest is what comes in.
+private struct HintLine: View {
+    let text: String
+    let y: CGFloat
+    let weight: NoonFont.Weight
+    let ink: Color
+    let onTexture: Bool
+    let dark: Double
+
+    static let fadeOut = 0.12
+    static let fadeIn = 0.2
+
+    @State private var shown: (text: String, y: CGFloat)?
+    /// The newest target, in state so the fade's completion reads it and
+    /// not the view value it was created with.
+    @State private var latest: (text: String, y: CGFloat)?
+    @State private var visible = true
+    @State private var swapping = false
+
+    var body: some View {
+        let line = shown ?? (text, y)
+        Text(line.text)
+            .font(NoonFont.f(weight, 17))
+            .tracking(-0.2)
+            .foregroundStyle(ink)
+            .modifier(OnTexture(enabled: onTexture, dark: dark))
+            .opacity(visible ? 1 : 0)
+            .offset(y: line.y)
+            // Held from the start, so the first change fades the old line
+            // out rather than showing the new one for a frame.
+            .onAppear { if shown == nil { shown = (text, y) } }
+            .onChange(of: text) { swap() }
+            .onChange(of: y) { swap() }
+    }
+
+    private func swap() {
+        latest = (text, y)
+        guard !swapping else { return }        // the swap below takes `latest`
+        swapping = true
+        withAnimation(.easeIn(duration: Self.fadeOut)) {
+            visible = false
+        } completion: {
+            var t = Transaction(); t.disablesAnimations = true
+            withTransaction(t) { shown = latest }
+            swapping = false
+            withAnimation(.easeOut(duration: Self.fadeIn)) { visible = true }
+        }
+    }
+}
+
 struct OnTexture: ViewModifier {
+    var enabled = true
+    /// 0 for white type, 1 for dark. Dark type over a light texture gets a
+    /// soft white halo in place of the drop shadow, which would only muddy it.
+    var dark: Double = 0
+
     func body(content: Content) -> some View {
+        let on = enabled ? 1.0 : 0
         content
-            .shadow(color: .black.opacity(0.34), radius: 1.5, y: 0.5)
-            .shadow(color: .black.opacity(0.28), radius: 9, y: 2)
+            .shadow(color: .black.opacity(0.34 * (1 - dark) * on), radius: 1.5, y: 0.5)
+            .shadow(color: .black.opacity(0.28 * (1 - dark) * on), radius: 9, y: 2)
+            .shadow(color: .white.opacity(0.55 * dark * on), radius: 8)
     }
 }
 

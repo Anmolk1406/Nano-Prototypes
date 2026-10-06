@@ -15,6 +15,22 @@ struct GyroCardView: View {
     /// two cards differ only in their planes.
     var spec: CardSpec = .invite
     var onClose: () -> Void = {}
+    /// Drawn over the card in its own space, after the floating planes — so it
+    /// turns with the card and may overhang it. The shine lab's running shines.
+    var extra: AnyView? = nil
+    /// Drawn under the card in its own space, first — a halo that turns with it.
+    var under: AnyView? = nil
+    /// Renders the whole card flat, in one pass, before it is turned.
+    ///
+    /// Otherwise each additive light — sheen, iridescence, rim, shines — and
+    /// each of their masks is its own layer, composited by the render server
+    /// *after* the 3D turn. On device that clipping slips under the
+    /// perspective, and pieces of light show outside the card as hard-edged
+    /// planes that jump from frame to frame; the Simulator composites
+    /// differently and never shows it. Flattened, the blends and clips all
+    /// happen in the card's own plane, and only the finished image turns.
+    /// It also clips everything to the card's box.
+    var flatten = false
 
     private var tilt: CGPoint {
         CGPoint(x: out.tilt.x * (t.invertX ? -1 : 1),
@@ -45,6 +61,8 @@ struct GyroCardView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            if let under { under }
+
             // The card body. Everything in here is clipped to the card, which
             // is what keeps the fuzzy ball bleeding off the left edge as drawn.
             ZStack(alignment: .topLeading) {
@@ -77,9 +95,12 @@ struct GyroCardView: View {
 
             if let disc = spec.closeDisc { closeButton(disc) }
 
+            if let extra { extra }
+
             if t.showBounds { bounds }
         }
         .frame(width: spec.size.width, height: spec.size.height)
+        .modifier(Flatten(on: flatten))
         .compositingGroup()
         .shadow(color: .black.opacity(spec.shadowStrength),
                 radius: 18 + 6 * tiltMagnitude,
@@ -91,6 +112,13 @@ struct GyroCardView: View {
         .rotation3DEffect(.degrees(pitch), axis: (x: 1, y: 0, z: 0), perspective: t.perspective)
         .rotation3DEffect(.degrees(yaw),   axis: (x: 0, y: 1, z: 0), perspective: t.perspective)
         .scaleEffect(t.cardScale)
+    }
+
+    private struct Flatten: ViewModifier {
+        let on: Bool
+        func body(content: Content) -> some View {
+            if on { content.drawingGroup() } else { content }
+        }
     }
 
     /// Clips a view to an image's alpha, when there is one to clip to.

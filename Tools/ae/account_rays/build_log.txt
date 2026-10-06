@@ -1,0 +1,9 @@
+ok   read layout
+ok   clear previous build
+ok   folder + footage
+ok   comp
+ok   BASE
+ok   RAYS_FLOW
+ok   RAYS
+ok   SPEED_LINES
+ok   open

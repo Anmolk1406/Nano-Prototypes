@@ -43,7 +43,7 @@ enum OnboardingSpec {
 
     // Bottom CTA bar — `Button Container`, e.g. 845:49517.
     static let ctaHeight: CGFloat = 56
-    static let ctaRadius: CGFloat = 12
+    static let ctaRadius: CGFloat = 16
     static let ctaInset: CGFloat = 16
 }
 
@@ -83,30 +83,27 @@ struct StepDots: View {
     }
 }
 
-/// `M-NeutralButton` — the near-black primary CTA used on every light step.
-/// Disabled follows the design system's muted-on-subtle-surface pattern.
+/// `M-NeutralButton` — the near-black primary CTA used on every light step,
+/// drawn by `DomeButtonStyle`: raised at rest, sunk under a lip with a rim of
+/// light on top when pressed, with its haptic on the press and the release.
+/// Disabled follows the design system's muted-on-subtle-surface pattern and
+/// stays flat — a sunk-in look on a button that cannot be pressed would be a
+/// promise it does not keep.
 struct NeutralCTA: View {
     let title: String
     var enabled = true
-    /// Opt in to the press-lift — grow and cast a deeper shadow while held,
-    /// with a tick down and a softer tick up. Off by default: onboarding's
-    /// buttons are the end of a form and want to stay quiet, while the
-    /// wallet's `Request top up` is the one thing on its page to touch.
-    var lift = false
     let action: () -> Void
 
     var body: some View {
-        Button {
-            if !lift { Haptics.shared.tap() }
-            action()
-        } label: {
+        Button(action: action) {
             Text(title)
                 .font(OnboardingSpec.F.a17)
                 .tracking(-0.25)
                 .foregroundStyle(enabled ? .white : OnboardingSpec.C.grey500)
                 .frame(maxWidth: .infinity)
                 .frame(height: OnboardingSpec.ctaHeight)
-                .background(enabled ? OnboardingSpec.C.primary : OnboardingSpec.C.surfaceTert)
+                // The dome is the enabled surface; this is the disabled one.
+                .background(enabled ? .clear : OnboardingSpec.C.surfaceTert)
                 .clipShape(RoundedRectangle(cornerRadius: OnboardingSpec.ctaRadius, style: .continuous))
                 // The design only ever draws this button enabled, so its
                 // disabled pattern — muted ink on a subtle surface — assumes a
@@ -120,13 +117,7 @@ struct NeutralCTA: View {
                     }
                 }
         }
-        .buttonStyle(PressLift(
-            scale: lift && enabled ? 1.03 : 1,
-            restShadow: .init(opacity: lift && enabled ? 0.16 : 0, radius: 12, y: 4),
-            pressedShadow: .init(opacity: lift && enabled ? 0.3 : 0, radius: 24, y: 14),
-            shape: AnyShape(RoundedRectangle(cornerRadius: OnboardingSpec.ctaRadius,
-                                             style: .continuous)),
-            haptics: lift && enabled))
+        .buttonStyle(DomeButtonStyle(corner: OnboardingSpec.ctaRadius))
         .disabled(!enabled)
         .animation(.easeOut(duration: 0.18), value: enabled)
     }

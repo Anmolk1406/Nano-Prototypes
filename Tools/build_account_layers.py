@@ -3,372 +3,362 @@
 
     python3 Tools/build_account_layers.py
 
-The header is the only part of this page that moves, so it is the only part
-that gets taken apart. Everything below it — the widgets, the settings lists —
-is one flat export, which is the right trade for a page whose body never
-animates.
+Third version, and the first that does not start from the finished render.
+The first two took the render and patched out whatever had to move, and a
+patch is an estimate: every one left a faint copy of what used to be there —
+a ghost of the ball under the ball, of the status bar at the top — invisible
+while everything sits at home and obvious the moment anything is in flight.
 
-Same method as `build_account_layers`'s sibling, `build_profile_layers.py`, and
-for the same reason: a layer that is going to move has to be cut to its own
-alpha, or it carries a slab of backdrop with it and draws a box around itself
-the moment it leaves home.
+So each plane now comes from the source that *determines* it:
 
-* **The backdrop is an export.** `978:15076` is the starburst image clipped to
-  the header. What it does not carry is the two gradient rects stacked over it
-  (`978:15077`, `978:15078`), which are what turn the source's blue into the
-  page's purple — those are fitted per-pixel from the finished render, so the
-  rays behind the avatar are the real rays and nothing is inpainted.
-* **The avatar is an ellipse**, so its matte is a circle. Nothing is measured.
-* **The three props keep their own alpha.** Their node exports come back matted
-  (Figma renders a node onto whatever is behind it), but `download_assets` also
-  returns the original uploads, and those have real alpha. Export RGB + raw
-  alpha is the prop.
-* **The three interest stickers are already in the catalogue.** They are the
-  same nodes as the profile card's badges — `pq_badge1…3` — and template
-  matching puts them here to within 1.7/255, so they are reused rather than
-  cut again.
+* **The backdrop is rebuilt from its recipe**, which the CSS gives exactly:
 
-Outputs:
+      header fill        linear #2188FF → #0A49B8, top to bottom
+      978:15076          the starburst upload, colour-dodged onto it
+      978:15077          #7D43EA in *color* blend mode, full bleed
+      978:15078          radial #7D43EA@0 → #4C17B0@1, centre (188, 116.5),
+                         radii 797 × 237, normal blend
 
-    acct_bg        the purple backdrop, whole
-    acct_avatar    the profile photo in its disc
-    acct_ball      the fuzzy googly ball
-    acct_star      the iridescent sparkle
-    acct_bolt      the lightning baseball
-    acct_body      everything below the header, flat
+  Nothing was ever in front of it, so nothing can ghost. It reproduces the
+  render to ~1/255 wherever the render shows backdrop — the check that the
+  recipe is read right. Two details it took to get there: the dodge and the
+  color blend act on sRGB values directly, and the radial gradient
+  interpolates colour *and* alpha together (straight, not premultiplied),
+  which makes its middle 10/255 brighter than a fade to the end colour.
+  Only the bottom strip, below the type, is the render: the skyline vectors
+  of 978:15079 peek into it, and nothing that moves ever reaches it.
+* **The ball and the star are their uploads**, at the CSS transform: the
+  ball is 48.31pt rotated −13.02° in its 57.95 box, the star fills its box.
+  Composited over the rebuilt backdrop they match the render to 2.6 and 1.3
+  out of 255, which is antialiasing.
+* **The bolt is its upload with the render's colour.** Figma draws it paler
+  and cooler than the file, an image adjustment the CSS does not report. Its
+  alpha is the upload's, so its edge is exact; its colour is the upload's
+  mapped through a quadratic fitted against the render inside the ball.
+* **The avatar is an ellipse**, so its matte is a circle.
+* **The stickers are `pq_badge1…3`**, the same nodes as the profile card's.
+
+And, for the rays animation, the backdrop in two planes (`Tools/ae/`):
+
+    acct_rays_base     the backdrop with no starburst at all
+    acct_rays          the starburst's contribution, as an RGBA plane that
+                       reproduces the backdrop when laid over the base
+    acct_rays_soft     the same with its outer edge feathered, for the copies
+                       that fly outward and must never show a boundary
 """
 
 import json
 import os
 import numpy as np
 from PIL import Image
-from scipy.ndimage import gaussian_filter, binary_dilation
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "account_src")
 CATALOG = os.path.join(HERE, "..", "GyroQR", "Assets.xcassets")
+AE_OUT = os.path.join(HERE, "ae", "account_rays")
 
 S = 3
-HEADER_W, HEADER_H = 375.0, 429.0
+HEADER_W, HEADER_H = 375.0, 428.756
 
-# Card-local geometry. Positions are summed through the parent frames; the
-# header's art all lives in `Frame 2147242732` (978:15075) at y = -197, which
-# is why every number below is its Figma y minus 197.
-AVATAR = dict(x=114.33, y=113.67, d=146.33)      # 978:15212, measured — see below
-# Positions from the node's *CSS box* rather than from the layer panel. For a
-# node with a transform the two disagree, and only the CSS is the rendered
-# rectangle: the panel puts the ball's top at 300.64 and the CSS at 289.76,
-# because the panel reports the unrotated node and the CSS the box its −13.02°
-# rotation actually occupies. An independent template match agrees with the
-# CSS to a tenth of a point.
+# The starburst's box, header-local. `978:15075` hangs at y −197.
+RAYS_BOX = dict(x=-26.0, y=-197.17, w=428.637, h=767.612)
+# Its vanishing point is the image's centre.
+VP = (RAYS_BOX["x"] + RAYS_BOX["w"] / 2, RAYS_BOX["y"] + RAYS_BOX["h"] / 2)
+
+# The planes' extent: the full width of the upload, and enough height that
+# the rays plane still covers the header when scaled down to 0.88 about VP.
+EXT = dict(x=-26.0, y=-24.0, w=428.0, h=486.0)
+# Below this the backdrop is the render (the skyline art).
+RENDER_FROM = 360.0
+
+AVATAR = dict(x=114.33, y=113.67, d=146.33)
 PROPS = [
-    dict(name="acct_ball", file="ball3x.png",
-         x=287.5078, y=289.7578 - 197, w=57.9538, h=57.9538),      # 978:15095
-    dict(name="acct_star", file="star3x.png",
-         x=288.2344, y=460.9141 - 197, w=82.1760, h=82.1760),      # 978:15093
-    dict(name="acct_bolt", file="fluff3x.png",
-         x=48.3633,  y=460.7891 - 197, w=42.5076, h=41.9686),      # 978:15083
+    # name, upload, CSS box (header-local), drawn size inside it, rotation
+    dict(name="acct_ball", file="raw_ball_r2.png",
+         box=(287.51, 289.76 - 197, 57.954, 57.954), inner=(48.311, 48.311), rot=-13.02),
+    dict(name="acct_star", file="raw_star_r1.png",
+         box=(288.23, 460.91 - 197, 82.176, 82.176), inner=(82.176, 82.176), rot=0.0),
+    dict(name="acct_bolt", file="raw_bolt_r1.png",
+         box=(48.36, 460.79 - 197, 42.508, 41.969), inner=(42.508, 41.969), rot=0.0,
+         grade=True),
 ]
-# `pq_badge1…3`, re-placed here. Template-matched against the header render at
-# 1.11 / 1.66 / 1.44 out of 255 — the same group as the profile card's, moved
-# by (+11.33, +30).
 STICKERS = [
     dict(name="pq_badge1", x=125.00, y=232.00, w=51.33, h=42.33),
     dict(name="pq_badge2", x=161.33, y=226.67, w=49.00, h=55.33),
     dict(name="pq_badge3", x=198.67, y=226.00, w=49.67, h=49.33),
 ]
-NAME_BOX = dict(x=50.5, y=300.76, w=274.0, h=32.0)
-MAIL_BOX = dict(x=112.5, y=336.76, w=150.0, h=20.0)
-HEADER_BAR = dict(x=16.0, y=45.0, w=343.0, h=56.0)
-STATUS_BAR = dict(x=0.0, y=0.0, w=375.0, h=45.0)
 
 
-def load(path, size=None):
-    im = Image.open(os.path.join(SRC, path)).convert("RGB")
-    if size and im.size != size:
-        im = im.resize(size, Image.LANCZOS)
-    return np.asarray(im).astype(np.float64) / 255
+def hexc(h):
+    return np.array([(h >> 16) & 255, (h >> 8) & 255, h & 255]) / 255.0
 
 
-def save(rgba, name):
-    d = os.path.join(CATALOG, f"{name}.imageset")
-    os.makedirs(d, exist_ok=True)
+def save(rgba, name, scale=S, folder=None):
     arr = np.clip(rgba * 255 + 0.5, 0, 255).astype(np.uint8)
-    Image.fromarray(arr).save(os.path.join(d, f"{name}.png"), optimize=True)
-    json.dump({"images": [{"filename": f"{name}.png", "idiom": "universal",
-                           "scale": f"{S}x"}],
-               "info": {"author": "xcode", "version": 1}},
-              open(os.path.join(d, "Contents.json"), "w"), indent=2)
-    kb = os.path.getsize(os.path.join(d, f"{name}.png")) // 1024
-    print(f"  {name:14s} {arr.shape[1]}x{arr.shape[0]}  {kb}KB")
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, f"{name}.png")
+    else:
+        d = os.path.join(CATALOG, f"{name}.imageset")
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, f"{name}.png")
+        json.dump({"images": [{"filename": f"{name}.png", "idiom": "universal",
+                               "scale": f"{scale}x"}],
+                   "info": {"author": "xcode", "version": 1}},
+                  open(os.path.join(d, "Contents.json"), "w"), indent=2)
+    Image.fromarray(arr).save(path, optimize=True)
+    print(f"  {name:16s} {arr.shape[1]}x{arr.shape[0]}  {os.path.getsize(path) // 1024}KB")
 
 
 # ---------------------------------------------------------------- the backdrop
 
-def support_of(export, pad=2):
-    """Where a node export differs from the canvas it was matted onto.
+def grid(ext, scale=S):
+    W, H = round(ext["w"] * scale), round(ext["h"] * scale)
+    x = ext["x"] + (np.arange(W) + 0.5) / scale
+    y = ext["y"] + (np.arange(H) + 0.5) / scale
+    return np.meshgrid(x, y)
 
-    Not the alpha — the *support*, which is all the backdrop patch needs to
-    know. It comes from the export alone, before anything else is solved.
+
+def starburst(ext, scale=S):
+    """The upload, laid into `ext` at its CSS box. Zero outside it."""
+    im = Image.open(os.path.join(SRC, "raw_rays1.png")).convert("RGB")
+    W, H = round(ext["w"] * scale), round(ext["h"] * scale)
+    # One affine resample straight into the output grid, so there is no
+    # rounding between the box and the pixels.
+    sx = im.size[0] / RAYS_BOX["w"]
+    sy = im.size[1] / RAYS_BOX["h"]
+    ox = (ext["x"] - RAYS_BOX["x"]) * sx
+    oy = (ext["y"] - RAYS_BOX["y"]) * sy
+    out = im.transform((W, H), Image.AFFINE,
+                       (sx / scale, 0, ox, 0, sy / scale, oy),
+                       resample=Image.BICUBIC)
+    return np.asarray(out).astype(np.float64) / 255
+
+
+def lum(c):
+    return c[..., 0] * 0.3 + c[..., 1] * 0.59 + c[..., 2] * 0.11
+
+
+def set_lum(c, l):
+    c = c + (l - lum(c))[..., None]
+    l = lum(c)[..., None]
+    n = c.min(-1, keepdims=True)
+    x = c.max(-1, keepdims=True)
+    c = np.where(n < 0, l + (c - l) * l / np.maximum(l - n, 1e-6), c)
+    c = np.where(x > 1, l + (c - l) * (1 - l) / np.maximum(x - l, 1e-6), c)
+    return c
+
+
+def backdrop(ext, rays=True, scale=S):
+    X, Y = grid(ext, scale)
+    t = np.clip(Y / HEADER_H, 0, 1)[..., None]
+    c = hexc(0x2188FF) * (1 - t) + hexc(0x0A49B8) * t
+    if rays:
+        s = starburst(ext, scale)
+        c = np.where(s >= 1, 1.0, np.minimum(1, c / np.maximum(1 - s, 1e-6)))
+    c = set_lum(np.broadcast_to(hexc(0x7D43EA), c.shape), lum(c))
+    # The vignette, in the box of 978:15078 (x 0.5, header y −197).
+    r = np.hypot((X - 0.5 - 188) / 797.37, (Y + 197 - 313.5) / 237.0)
+    a = np.clip(r, 0, 1)[..., None]
+    col = hexc(0x7D43EA) * (1 - a) + hexc(0x4C17B0) * a
+    return np.clip(c * (1 - a) + col * a, 0, 1)
+
+
+def with_render_strip(img, ext, render):
+    """Swap in the render below the type, with a 4pt blend."""
+    X, Y = grid(ext)
+    w = np.clip((Y - RENDER_FROM) / 4.0, 0, 1)
+    inside = (X >= 0) & (X < HEADER_W) & (Y >= 0) & (Y < 429)
+    out = img.copy()
+    ys, xs = np.nonzero(inside)
+    ry = np.clip(((Y[inside]) * S).astype(int), 0, render.shape[0] - 1)
+    rx = np.clip(((X[inside]) * S).astype(int), 0, render.shape[1] - 1)
+    ww = w[inside][:, None]
+    out[ys, xs] = img[ys, xs] * (1 - ww) + render[ry, rx] * ww
+    return out
+
+
+def matte_over(F, B):
+    """An RGBA plane P with P over B == F, as transparent as possible.
+
+    The starburst only ever brightens, so every pixel is B moved toward
+    something lighter: α is the least that gets the brightest-moving channel
+    there, and the colour follows from it.
     """
-    canvas = canvas_from_margin(export)
-    m = np.abs(export - canvas).max(axis=2) > 0.02
-    return binary_dilation(m, iterations=pad)
-
-
-def backdrop(bg, flat, supports):
-    """Recover the header's purple everywhere, including behind everything.
-
-    `bg` is the starburst as Figma renders it alone; `flat` is the finished
-    header. Between them sit two full-bleed gradient rects, and what they do to
-    a pixel depends only on where that pixel is — so the map between the two is
-    smooth in x and y even though it is not smooth in colour. Fitted locally as
-    a per-channel affine and then evaluated *inside* the holes, which is how
-    the rays come back behind the avatar without being drawn.
-    """
-    H, W, _ = bg.shape
-    Y, X = np.mgrid[0:H, 0:W]
-    x, y = X / S, Y / S
-
-    def rect(b, pad=0):
-        return ((x > b["x"] - pad) & (x < b["x"] + b["w"] + pad) &
-                (y > b["y"] - pad) & (y < b["y"] + b["h"] + pad))
-
-    def place(mask, box):
-        out = np.zeros((H, W), bool)
-        X, Y = int(round(box[0] * S)), int(round(box[1] * S))
-        mh, mw = mask.shape
-        out[Y:Y + mh, X:X + mw] = mask
-        return out
-
-    hole = np.hypot(x - (AVATAR["x"] + AVATAR["d"] / 2),
-                    y - (AVATAR["y"] + AVATAR["d"] / 2)) < AVATAR["d"] / 2 + 4
-    # The props and the stickers are holed by their *silhouettes*, not their
-    # boxes. This matters more than it sounds: the prop solve below needs the
-    # backdrop to be right in the clear margin inside each prop's box, because
-    # that margin is where it reads off "these two renders agree, so alpha is
-    # zero here". Holing the whole box puts that margin into the fit's
-    # extrapolated region, where it came out 15/255 adrift — and a 15/255
-    # error there makes the solve think the transparent corners are opaque.
-    for sup, box in supports:
-        hole |= place(sup, box)
-    hole |= rect(NAME_BOX, 3) | rect(MAIL_BOX, 3)
-    hole |= rect(HEADER_BAR, 3) | rect(STATUS_BAR, 2)
-
-    # What has to come out from behind something. The avatar and its stickers
-    # scale up from small, so they uncover ground inside their own footprint;
-    # the props travel in, so they uncover their homes; and the type and the
-    # two icon buttons are drawn natively so they can join the stagger, which
-    # means the backdrop has to be clean where they sit. The status bar goes
-    # too, and for a different reason: the device draws its own, and leaving
-    # the design's in gives the page two clocks.
-    vacated = hole & ~(y > 372)
-    # The bottom of the header is the dark ribbon art the body covers anyway.
-    hole |= y > 372
-
-    known = ~hole
-
-    def fields(sigmas=(12, 28, 64, 150, 360)):
-        k = known.astype(np.float64)
-        A = np.full(bg.shape, np.nan)
-        B = np.full(bg.shape, np.nan)
-        for sig in sigmas:
-            N = gaussian_filter(k, sig)
-            for c in range(3):
-                u, v = bg[..., c], flat[..., c]
-                Su = gaussian_filter(u * k, sig)
-                Sv = gaussian_filter(v * k, sig)
-                Suu = gaussian_filter(u * u * k, sig)
-                Suv = gaussian_filter(u * v * k, sig)
-                den = Suu * N - Su * Su
-                good = (N > 0.06) & (np.abs(den) > 4e-6)
-                a = np.clip(np.where(good, (Suv * N - Su * Sv) /
-                                     np.where(good, den, 1), np.nan), 0.0, 3.0)
-                b = np.where(good, (Sv - a * Su) / np.where(N > 0, N, 1), np.nan)
-                take = np.isnan(A[..., c]) & good
-                A[..., c][take] = a[take]
-                B[..., c][take] = b[take]
-        return np.nan_to_num(A, nan=1.0), np.nan_to_num(B, nan=0.0)
-
-    A, B = fields()
-    fit = np.clip(bg * A + B, 0, 1)
-    err = np.abs(fit - flat)[known]
-    print("  affine fit alone: mean %.2f  p95 %.2f  (/255, on %d%% of the header)"
-          % (err.mean() * 255, np.percentile(err, 95) * 255,
-             round(100 * known.mean())))
-
-    # The fit's rays come out stronger than the rendered ones — the gradient
-    # rects flatten them more than a per-channel affine can express, and where
-    # the source clips to white there is nothing left to fit. So the fit is not
-    # used as the backdrop. It is used only to *patch*, and its level is
-    # corrected first.
-    #
-    # The correction is the fit's own error, measured where both images are
-    # known and carried into the holes by a normalised blur. That error is
-    # smooth — it is a level and a contrast, not structure — so carrying it in
-    # this way removes it while leaving the rays the fit got right.
-    k = known.astype(np.float64)
-    resid = (flat - fit) * k[..., None]
-    sig = 40.0
-    weight = gaussian_filter(k, sig)
-    lift = np.dstack([gaussian_filter(resid[..., c], sig) /
-                      np.maximum(weight, 1e-6) for c in range(3)])
-    patch = np.clip(fit + lift, 0, 1)
-    err = np.abs(patch - flat)[known]
-    print("  after the level correction: mean %.2f  p95 %.2f  (/255)"
-          % (err.mean() * 255, np.percentile(err, 95) * 255))
-
-    # And the base is the *render*, with only the vacated regions patched.
-    # Everything the animation does not move — the rays, the type, the status
-    # bar — stays pixel-exact, and the fit is only trusted where something has
-    # to come out from behind.
-    soft = gaussian_filter(vacated.astype(np.float64), 2.5 * S)[..., None]
-    out = flat * (1 - soft) + patch * soft
-    return np.clip(out, 0, 1)
+    up = np.where(F > B, (F - B) / np.maximum(1 - B, 1e-4), 0)
+    a = np.clip(up.max(-1), 0, 1)[..., None]
+    C = np.clip((F - B * (1 - a)) / np.maximum(a, 1e-4), 0, 1)
+    C = np.where(a > 1e-3, C, 1.0)
+    return np.dstack([C, a[..., 0]])
 
 
 # ------------------------------------------------------------------- the planes
 
-def cut_avatar():
-    """The disc. Its matte is a circle, because the node is an ellipse."""
-    rgb = load("avatar3x.png")
+def cover(im, w, h):
+    iw, ih = im.size
+    s = max(w / iw, h / ih)
+    im = im.resize((max(1, round(iw * s)), max(1, round(ih * s))), Image.LANCZOS)
+    l, t = (im.size[0] - w) // 2, (im.size[1] - h) // 2
+    return im.crop((l, t, l + w, t + h))
+
+
+def prop_plane(p):
+    """The upload at its CSS transform, on a canvas the size of the CSS box."""
+    x, y, w, h = p["box"]
+    im = Image.open(os.path.join(SRC, p["file"])).convert("RGBA")
+    im = cover(im, round(p["inner"][0] * S), round(p["inner"][1] * S))
+    if p["rot"]:
+        im = im.rotate(-p["rot"], resample=Image.BICUBIC, expand=True)
+    W, H = round(w * S), round(h * S)
+    canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    canvas.alpha_composite(im, ((W - im.size[0]) // 2, (H - im.size[1]) // 2))
+    return np.asarray(canvas).astype(np.float64) / 255
+
+
+def paste(dst, plane, x, y):
+    X0, Y0 = int(round(x * S)), int(round(y * S))
+    h, w = plane.shape[:2]
+    H, W = dst.shape[:2]
+    xs, ys, xe, ye = max(0, X0), max(0, Y0), min(W, X0 + w), min(H, Y0 + h)
+    s = plane[ys - Y0:ye - Y0, xs - X0:xe - X0]
+    a = s[..., 3:]
+    dst[ys:ye, xs:xe] = s[..., :3] * a + dst[ys:ye, xs:xe] * (1 - a)
+
+
+def grade(plane, p, bg, render):
+    """Map the upload's colour onto the render's, through a quadratic in RGB."""
+    x, y = p["box"][:2]
+    X0, Y0 = int(round(x * S)), int(round(y * S))
+    h, w = plane.shape[:2]
+    a = plane[..., 3]
+    core = a > 0.985
+    src = plane[..., :3][core]
+    dst = render[Y0:Y0 + h, X0:X0 + w][core]
+
+    def feats(c):
+        r, g, b = c[:, 0], c[:, 1], c[:, 2]
+        return np.stack([r, g, b, r * r, g * g, b * b, r * g, g * b, b * r,
+                         np.ones_like(r)], 1)
+
+    M, *_ = np.linalg.lstsq(feats(src), dst, rcond=None)
+    flat = plane[..., :3].reshape(-1, 3)
+    out = np.clip(feats(flat) @ M, 0, 1).reshape(plane[..., :3].shape)
+    err = np.abs(np.clip(feats(src) @ M, 0, 1) - dst).mean() * 255
+    print(f"    colour grade fitted on {core.sum()} px, residual {err:.2f}/255")
+    return np.dstack([out, a])
+
+
+def avatar_plane():
+    rgb = np.asarray(Image.open(os.path.join(SRC, "avatar3x.png")).convert("RGB")
+                     ).astype(np.float64) / 255
     n = rgb.shape[0]
     Y, X = np.mgrid[0:n, 0:n]
     d = np.hypot(X - (n - 1) / 2, Y - (n - 1) / 2)
-    alpha = np.clip(n / 2 - d + 0.5, 0, 1)
-    return np.dstack([rgb, alpha])
+    return np.dstack([rgb, np.clip(n / 2 - d + 0.5, 0, 1)])
 
 
-def canvas_from_margin(export):
-    """The page colour behind a node export, read off its own border ring.
-
-    Figma renders a node **without its siblings**, matted onto the page
-    canvas — the prop exports here come back on the file's blue, not on the
-    header's purple, which is what makes the solve below possible. The canvas
-    is a gentle gradient rather than one flat blue, so a plane fitted through
-    the border pixels is worth the four lines over sampling one corner.
-    """
-    H, W, _ = export.shape
-    Y, X = np.mgrid[0:H, 0:W]
-    ring = np.zeros((H, W), bool)
-    ring[:2, :] = ring[-2:, :] = True
-    ring[:, :2] = ring[:, -2:] = True
-    M = np.stack([X[ring], Y[ring], np.ones(ring.sum())], 1)
-    out = np.empty_like(export)
-    for c in range(3):
-        sol, *_ = np.linalg.lstsq(M, export[ring, c], rcond=None)
-        out[..., c] = sol[0] * X + sol[1] * Y + sol[2]
-    return out
+def sticker_plane(st):
+    im = Image.open(os.path.join(CATALOG, f"{st['name']}.imageset/{st['name']}.png")
+                    ).convert("RGBA")
+    im = im.resize((round(st["w"] * S), round(st["h"] * S)), Image.LANCZOS)
+    return np.asarray(im).astype(np.float64) / 255
 
 
-def cut_prop(p, flat, plate):
-    """Solve the prop's alpha and colour from two renders over two grounds.
+# ---------------------------------------------------------------- verification
 
-    A single composite is one equation in two unknowns, which is why no amount
-    of thresholding one image can say where an object ends. Two composites over
-    *different* grounds is two equations:
-
-        C1 = F·α + G1·(1-α)
-        C2 = F·α + G2·(1-α)     ⟹     1-α = (C1-C2)/(G1-G2)
-
-    and both are to hand: `C1` is the node's own export over the page canvas,
-    `C2` is the finished header over the backdrop `reconstruct` recovered.
-
-    This replaced taking α from the original upload, which is the obvious
-    shortcut and is wrong: the uploads are the *untransformed* source, and the
-    CSS shows this node group applies transforms the metadata does not mention
-    — the ball is rotated −13.02° and drawn at 48.3pt inside its 58pt box.
-    Its upload's silhouette therefore does not match its export's, and no
-    amount of care about placement fixes a matte that is the wrong shape.
-    Solving from the two renders needs to know none of that.
-
-    The position is searched at the same time, by the score that made the
-    profile card's badges work: at the right offset the three channels' answers
-    for `1-α` agree, because they are three readings of one number.
-    """
-    export = load(p["file"])
-    h, w, _ = export.shape
-    canvas = canvas_from_margin(export)
-
-    # A short refinement only — the CSS box is right, and a wide search on a
-    # 40pt prop finds spurious minima in the rays behind it.
-    best = (1e9, 0, 0)
-    for dy in range(-2 * S, 2 * S + 1):
-        for dx in range(-2 * S, 2 * S + 1):
-            X = int(round(p["x"] * S)) + dx
-            Y = int(round(p["y"] * S)) + dy
-            if X < 0 or Y < 0 or X + w > flat.shape[1] or Y + h > flat.shape[0]:
-                continue
-            d = canvas - plate[Y:Y + h, X:X + w]
-            usable = np.abs(d) > 0.03
-            inv = np.where(usable, (export - flat[Y:Y + h, X:X + w]) /
-                           np.where(usable, d, 1), np.nan)
-            score = np.nanmedian(np.nanmax(inv, axis=2) - np.nanmin(inv, axis=2))
-            if score < best[0]:
-                best = (score, dx, dy)
-    score, dx, dy = best
-    X = int(round(p["x"] * S)) + dx
-    Y = int(round(p["y"] * S)) + dy
-
-    C2 = flat[Y:Y + h, X:X + w]
-    G2 = plate[Y:Y + h, X:X + w]
-    d = canvas - G2
-    weight = np.abs(d)
-    weight = weight / np.maximum(weight.sum(axis=2, keepdims=True), 1e-6)
-    inv = np.clip(np.where(np.abs(d) > 1e-4, (export - C2) /
-                           np.where(np.abs(d) > 1e-4, d, 1), 1.0), 0, 1)
-    alpha = np.clip(1.0 - (inv * weight).sum(axis=2), 0, 1)
-    alpha[alpha < 0.015] = 0
-    a3 = alpha[..., None]
-    colour = np.clip(np.where(a3 > 0.004, (C2 - G2 * (1 - a3)) /
-                              np.maximum(a3, 1e-4), 0.0), 0, 1)
-    p["x"], p["y"] = X / S, Y / S
-    print("    %-10s at (%.2f, %.2f)  moved (%+.2f, %+.2f)  channel spread %.3f  coverage %.2f"
-          % (p["name"], p["x"], p["y"], dx / S, dy / S, score, (alpha > 0.01).mean()))
-    return np.dstack([colour, alpha])
+def report(name, a, b, box, pad=4):
+    x, y, w, h = box
+    sl = (slice(max(0, int((y - pad) * S)), int((y + h + pad) * S)),
+          slice(max(0, int((x - pad) * S)), min(a.shape[1], int((x + w + pad) * S))))
+    d = np.abs(a[sl] - b[sl]).mean(-1) * 255
+    print(f"    {name:12s} mean {d.mean():5.2f}  p95 {np.percentile(d, 95):5.2f}  (/255)")
 
 
 def main():
-    flat = load("header3x.png")
-    bg = load("bg3x.png", size=(flat.shape[1], flat.shape[0]))
-
-    # Every plane's silhouette, before anything is solved: the props from
-    # their own exports, the stickers from the alpha they already have.
-    supports = [(support_of(load(p["file"])), (p["x"], p["y"])) for p in PROPS]
-    for st in STICKERS:
-        a = np.asarray(Image.open(os.path.join(
-            CATALOG, f"{st['name']}.imageset/{st['name']}.png")).convert("RGBA"))
-        a = np.asarray(Image.fromarray(a).resize(
-            (int(round(st["w"] * S)), int(round(st["h"] * S))), Image.LANCZOS))
-        supports.append((binary_dilation(a[..., 3] > 6, iterations=2),
-                         (st["x"], st["y"])))
+    header_ext = dict(x=0, y=0, w=375, h=429)
+    render = np.asarray(Image.open(os.path.join(SRC, "header3x.png")).convert("RGB")
+                        ).astype(np.float64) / 255
 
     print("the backdrop")
-    plate = backdrop(bg, flat, supports)
+    bg = with_render_strip(backdrop(header_ext), header_ext, render)
+
+    # Where the render shows only backdrop, the rebuild must equal it.
+    X, Y = grid(header_ext)
+    clear = np.ones(X.shape, bool)
+    for p in PROPS:
+        x, y, w, h = p["box"]
+        clear &= ~((X > x - 3) & (X < x + w + 3) & (Y > y - 3) & (Y < y + h + 3))
+    clear &= ~((X > 90) & (X < 285) & (Y > 95) & (Y < 360))      # avatar, stickers, type
+    clear &= ~(Y < 104)                                            # status bar, buttons
+    d = np.abs(bg - render).mean(-1)[clear] * 255
+    print(f"    rebuild vs render, clear backdrop: mean {d.mean():.2f}  p95 "
+          f"{np.percentile(d, 95):.2f}  p99 {np.percentile(d, 99):.2f}  (/255)")
 
     print("written")
-    save(plate, "acct_bg")
-    save(cut_avatar(), "acct_avatar")
-    print("  the props")
+    save(bg, "acct_bg")
+    # Frame 0 of the rays animation: the header before any ray has arrived.
+    # The Lottie view shows it while the archive loads, so there is no flash.
+    save(with_render_strip(backdrop(header_ext, rays=False), header_ext, render),
+         "acct_bg_base")
+    save(avatar_plane(), "acct_avatar")
+    planes = {}
     for p in PROPS:
-        save(cut_prop(p, flat, plate), p["name"])
-    # The body goes in as it comes out of Figma. The page header does not:
-    # its export is 8pt of shadow bleed around two *transparent* rings, matted
-    # onto the purple, so it would arrive as a purple slab. The two buttons are
-    # a white ring and a glyph — cheaper and sharper drawn natively, and they
-    # are chrome rather than part of the animation.
-    body = Image.open(os.path.join(SRC, "body3x.png")).convert("RGBA")
-    save(np.asarray(body).astype(np.float64) / 255, "acct_body")
+        plane = prop_plane(p)
+        if p.get("grade"):
+            plane = grade(plane, p, bg, render)
+        planes[p["name"]] = plane
+        save(plane, p["name"])
+
+    print("recomposited against the design")
+    comp = bg.copy()
+    for p in PROPS:
+        paste(comp, planes[p["name"]], *p["box"][:2])
+        report(p["name"][5:], comp, render, p["box"])
+    paste(comp, avatar_plane(), AVATAR["x"], AVATAR["y"])
+    report("avatar", comp, render, (AVATAR["x"] + 8, AVATAR["y"] + 8,
+                                   AVATAR["d"] - 16, AVATAR["d"] - 16), pad=0)
+    for st in STICKERS:
+        paste(comp, sticker_plane(st), st["x"], st["y"])
+    report("stickers", comp, render, (125, 226, 123, 56), pad=0)
+
+    print("the rays, for After Effects")
+    F = backdrop(EXT)
+    B = backdrop(EXT, rays=False)
+    # The render strip belongs in both, so the rays plane is clear over it.
+    F = with_render_strip(F, EXT, render)
+    B = with_render_strip(B, EXT, render)
+    rays = matte_over(F, B)
+    back = rays[..., :3] * rays[..., 3:] + B * (1 - rays[..., 3:])
+    d = np.abs(back - F).mean(-1) * 255
+    print(f"    rays over base vs backdrop: mean {d.mean():.2f}  max {d.max():.2f}  (/255)")
+    save(np.dstack([B, np.ones(B.shape[:2])]), "acct_rays_base", folder=AE_OUT)
+    save(rays, "acct_rays", folder=AE_OUT)
+
+    # The soft copy: feathered to nothing by 200pt from the vanishing point,
+    # which is inside the upload's nearest edge (214pt away, left and right),
+    # so a copy at any scale shows rays thinning out and never an edge.
+    soft_ext = dict(x=VP[0] - 206, y=VP[1] - 206, w=412, h=412)
+    Fs, Bs = backdrop(soft_ext, scale=2), backdrop(soft_ext, rays=False, scale=2)
+    soft = matte_over(Fs, Bs)
+    Xs, Ys = grid(soft_ext, scale=2)
+    r = np.hypot(Xs - VP[0], Ys - VP[1])
+    t = np.clip((200 - r) / 70, 0, 1)
+    soft[..., 3] *= t * t * (3 - 2 * t)
+    save(soft, "acct_rays_soft", folder=AE_OUT)
+
+    json.dump(dict(size=[375, 429], vp=[round(VP[0], 3), round(VP[1], 3)],
+                   rays=dict(file="acct_rays.png", x=EXT["x"], y=EXT["y"],
+                             w=EXT["w"], h=EXT["h"], scale=S),
+                   soft=dict(file="acct_rays_soft.png", x=soft_ext["x"],
+                             y=soft_ext["y"], w=412, h=412, scale=2),
+                   base=dict(file="acct_rays_base.png", x=EXT["x"], y=EXT["y"],
+                             w=EXT["w"], h=EXT["h"], scale=S)),
+              open(os.path.join(AE_OUT, "layout.json"), "w"), indent=1)
 
     print("\nAccountSpec frames")
-    print("  avatar   CGRect(x: %.2f, y: %.2f, width: %.2f, height: %.2f)"
-          % (AVATAR["x"], AVATAR["y"], AVATAR["d"], AVATAR["d"]))
     for p in PROPS:
-        print("  %-8s CGRect(x: %.2f, y: %.2f, width: %.2f, height: %.2f)"
-              % (p["name"][5:], p["x"], p["y"], p["w"], p["h"]))
-    for s in STICKERS:
-        print("  %-8s CGRect(x: %.2f, y: %.2f, width: %.2f, height: %.2f)"
-              % (s["name"][3:], s["x"], s["y"], s["w"], s["h"]))
+        x, y, w, h = p["box"]
+        print(f"  {p['name'][5:]:6s} CGRect(x: {x:.2f}, y: {y:.2f}, width: {w:.2f}, height: {h:.2f})")
 
 
 if __name__ == "__main__":
